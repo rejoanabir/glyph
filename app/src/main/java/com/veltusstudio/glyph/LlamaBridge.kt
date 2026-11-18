@@ -9,7 +9,16 @@ class LlamaBridge {
     var isLoaded: Boolean = false
         private set
 
+    var loadedModelPath: String = ""
+        private set
+
     var loadedModelName: String = ""
+        private set
+
+    var loadedThreads: Int = 4
+        private set
+
+    var loadedCtxSize: Int = 2048
         private set
 
     companion object {
@@ -32,7 +41,15 @@ class LlamaBridge {
     fun loadModel(path: String, displayName: String, threads: Int = 4, ctxSize: Int = 2048): Boolean {
         val ok = nativeLoadModel(path, threads, ctxSize)
         isLoaded = ok
-        loadedModelName = if (ok) displayName else ""
+        if (ok) {
+            loadedModelPath = path
+            loadedModelName = displayName
+            loadedThreads = threads
+            loadedCtxSize = ctxSize
+        } else {
+            loadedModelPath = ""
+            loadedModelName = ""
+        }
         return ok
     }
 
@@ -57,6 +74,7 @@ class LlamaBridge {
     fun unload() {
         nativeUnload()
         isLoaded = false
+        loadedModelPath = ""
         loadedModelName = ""
     }
 }

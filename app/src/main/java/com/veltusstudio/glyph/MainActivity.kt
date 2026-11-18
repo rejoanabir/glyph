@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.text.InputType
 import android.text.SpannableStringBuilder
@@ -35,18 +36,21 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
 
     private val bgObsidian = Color.parseColor("#080B10")
     private val surfaceCard = Color.parseColor("#0F151F")
+    private val surfaceElevated = Color.parseColor("#141D2B")
     private val codeBlockBg = Color.parseColor("#06090E")
     private val userBubbleBg = Color.parseColor("#132033")
     private val borderSubtle = Color.parseColor("#1C2636")
     private val accentCyan = Color.parseColor("#00D2FF")
     private val textPrimary = Color.parseColor("#F1F5F9")
     private val textMuted = Color.parseColor("#94A3B8")
+    private val dangerRed = Color.parseColor("#EF4444")
 
     private val pickModelRequestCode = 9001
     private val starterModelName = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
@@ -61,6 +65,7 @@ class MainActivity : Activity() {
     private val conversationHistory = mutableListOf<Pair<String, String>>()
     private val llamaBridge = LlamaBridge()
 
+    private lateinit var subtitleText: TextView
     private lateinit var statusDot: View
     private lateinit var statusLabel: TextView
     private lateinit var emptySubLabel: TextView
@@ -82,6 +87,11 @@ class MainActivity : Activity() {
     private fun getSystemPrompt(): String = prefs().getString("system_prompt", defaultSystemPrompt) ?: defaultSystemPrompt
     private fun getTemperature(): Float = prefs().getFloat("temperature", 0.7f)
     private fun getMaxTokens(): Int = prefs().getInt("max_tokens", 1024)
+    private fun getCtxSize(): Int = prefs().getInt("n_ctx", 2048)
+    private fun getCpuThreads(): Int {
+        val defaultThreads = Runtime.getRuntime().availableProcessors().coerceIn(2, 6)
+        return prefs().getInt("n_threads", defaultThreads)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -136,42 +146,70 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun formatFileSize(bytes: Long): String {
+        val mb = bytes / (1024.0 * 1024.0)
+        return if (mb >= 1024.0) {
+            String.format(Locale.US, "%.2f GB", mb / 1024.0)
+        } else {
+            String.format(Locale.US, "%.0f MB", mb)
+        }
+    }
+
     private fun setStatus(label: String, colorHex: String) {
         statusDot.background = roundedBox(Color.parseColor(colorHex), Color.TRANSPARENT, 50, 0)
         statusLabel.text = label
     }
 
-    private fun initializeEngine() {
+    private fun initializeEngine(forceReload: Boolean = false) {
         if (!isNativeMode()) {
+            subtitleText.text = "Hybrid Server Mode"
             checkServerHealth()
             return
         }
 
+        val modelsDir = File(filesDir, "models").apply { mkdirs() }
         val savedPath = getSavedModelPath()
         val savedName = getSavedModelName()
-        if (savedPath.isNotEmpty() && File(savedPath).exists()) {
-            loadNativeModelAsync(savedPath, savedName.ifEmpty { File(savedPath).name })
-        } else {
-            // Check if starter model already exists in internal models dir
-            val localFile = File(File(filesDir, "models"), starterModelName)
-            if (localFile.exists() && localFile.length() > 10_000_000L) {
-                loadNativeModelAsync(localFile.absolutePath, starterModelName)
-            } else {
-                setStatus("No Model", "#F59E0B")
-                emptySubLabel.text = "Standalone On-Device Mode\nPick a .gguf file or download Qwen 1.5B below to begin"
+
+        val targetFile = when {
+            savedPath.isNotEmpty() && File(savedPath).exists() -> File(savedPath)
+            else -> modelsDir.listFiles()?.firstOrNull { it.name.endsWith(".gguf") && it.length() > 10_000_000L }
+        }
+
+        if (targetFile != null && targetFile.exists()) {
+            val targetName = if (targetFile.absolutePath == savedPath && savedName.isNotEmpty()) savedName else targetFile.name
+            val desiredThreads = getCpuThreads()
+            val desiredCtx = getCtxSize()
+            if (!forceReload &&
+                llamaBridge.isLoaded &&
+                llamaBridge.loadedModelPath == targetFile.absolutePath &&
+                llamaBridge.loadedThreads == desiredThreads &&
+                llamaBridge.loadedCtxSize == desiredCtx
+            ) {
+                setStatus("Ready", "#10B981")
+                subtitleText.text = "$targetName • ${desiredCtx} ctx"
+                return
             }
+            loadNativeModelAsync(targetFile.absolutePath, targetName)
+        } else {
+            setStatus("No Model", "#F59E0B")
+            subtitleText.text = "by Veltus Studio • Offline"
+            emptySubLabel.text = "Standalone On-Device Mode\nPick a .gguf file or download Qwen 1.5B below to begin"
         }
     }
 
     private fun loadNativeModelAsync(path: String, displayName: String) {
         if (isBusyModel) return
         isBusyModel = true
+        val threads = getCpuThreads()
+        val ctxSize = getCtxSize()
+
         setStatus("Loading...", "#F59E0B")
-        emptySubLabel.text = "Loading $displayName into RAM..."
+        subtitleText.text = "Loading $displayName..."
+        emptySubLabel.text = "Loading $displayName into RAM ($threads threads, $ctxSize ctx)..."
 
         executor.execute {
-            val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 6)
-            val ok = llamaBridge.loadModel(path, displayName, threads = threads, ctxSize = 2048)
+            val ok = llamaBridge.loadModel(path, displayName, threads = threads, ctxSize = ctxSize)
             mainHandler.post {
                 isBusyModel = false
                 if (ok) {
@@ -180,10 +218,12 @@ class MainActivity : Activity() {
                         .putString("model_name", displayName)
                         .apply()
                     setStatus("Ready", "#10B981")
-                    emptySubLabel.text = "Loaded: $displayName\n100% Offline • Multi-turn memory active"
+                    subtitleText.text = "$displayName • $ctxSize ctx"
+                    emptySubLabel.text = "Loaded: $displayName\n100% Offline • $threads CPU threads • $ctxSize context"
                 } else {
                     setStatus("Load Error", "#EF4444")
-                    emptySubLabel.text = "Failed to load $displayName.\nSelect a valid GGUF model file."
+                    subtitleText.text = "Model load failed"
+                    emptySubLabel.text = "Failed to load $displayName.\nTry lowering Context Size in ⚙ or select another GGUF."
                 }
             }
         }
@@ -372,19 +412,20 @@ class MainActivity : Activity() {
             letterSpacing = 0.12f
         }
 
-        val subtitleText = TextView(this).apply {
+        subtitleText = TextView(this).apply {
             text = "by Veltus Studio"
             setTextColor(textMuted)
-            textSize = 12f
+            textSize = 11f
+            maxLines = 1
         }
 
         titleCol.addView(titleText)
         titleCol.addView(subtitleText)
 
-        // Reset Chat Pill
-        val resetBtn = TextView(this).apply {
-            text = "Reset"
-            setTextColor(textMuted)
+        // New Chat Pill
+        val newChatBtn = TextView(this).apply {
+            text = "+ New"
+            setTextColor(textPrimary)
             textSize = 11f
             background = roundedBox(surfaceCard, borderSubtle, 50)
             setPadding(dp(10), dp(6), dp(10), dp(6))
@@ -397,7 +438,7 @@ class MainActivity : Activity() {
             setOnClickListener { clearChat() }
         }
 
-        // Settings Pill
+        // Settings & Model Manager Pill
         val settingsBtn = TextView(this).apply {
             text = "⚙"
             setTextColor(textPrimary)
@@ -437,11 +478,11 @@ class MainActivity : Activity() {
         statusPill.addView(statusDot)
         statusPill.addView(statusLabel)
         statusPill.setOnClickListener {
-            if (isNativeMode()) openModelFilePicker() else checkServerHealth()
+            if (isNativeMode()) openSettingsDialog() else checkServerHealth()
         }
 
         header.addView(titleCol)
-        header.addView(resetBtn)
+        header.addView(newChatBtn)
         header.addView(settingsBtn)
         header.addView(statusPill)
         root.addView(header)
@@ -453,7 +494,7 @@ class MainActivity : Activity() {
                 0,
                 1f
             ).apply {
-                topMargin = dp(16)
+                topMargin = dp(14)
                 bottomMargin = dp(10)
             }
         }
@@ -466,11 +507,11 @@ class MainActivity : Activity() {
             )
         }
 
-        // Empty State Placeholder with Standalone Model Actions
+        // Empty State Placeholder
         emptyState = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(16), dp(42), dp(16), dp(16))
+            setPadding(dp(16), dp(38), dp(16), dp(16))
         }
 
         val emptyTitle = TextView(this).apply {
@@ -631,7 +672,7 @@ class MainActivity : Activity() {
         messageContainer.removeAllViews()
         emptyState.visibility = View.VISIBLE
         messageContainer.addView(emptyState)
-        Toast.makeText(this, "Conversation cleared", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "New conversation started", Toast.LENGTH_SHORT).show()
     }
 
     private fun openSettingsDialog() {
@@ -646,7 +687,7 @@ class MainActivity : Activity() {
             setTextColor(accentCyan)
             textSize = 11f
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, dp(10), 0, dp(4))
+            setPadding(0, dp(12), 0, dp(6))
         }
 
         fun makeInput(value: String, multiline: Boolean = false, numeric: Boolean = false): EditText = EditText(this).apply {
@@ -664,45 +705,205 @@ class MainActivity : Activity() {
             }
         }
 
+        var dialogRef: AlertDialog? = null
+
         val nativeSwitch = Switch(this).apply {
-            text = "Standalone On-Device Engine (No Termux)"
+            text = "Standalone On-Device Engine"
             setTextColor(textPrimary)
             textSize = 13f
             isChecked = isNativeMode()
             setPadding(0, dp(4), 0, dp(8))
         }
 
-        val pickModelDialogBtn = TextView(this).apply {
-            text = if (llamaBridge.isLoaded) "Active Model: ${llamaBridge.loadedModelName} (Tap to Switch)" else "Load .gguf Model File"
-            setTextColor(accentCyan)
-            textSize = 12f
-            background = roundedBox(surfaceCard, borderSubtle, 10)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            setOnClickListener { openModelFilePicker() }
+        container.addView(nativeSwitch)
+
+        // Installed GGUF Models List
+        container.addView(makeLabel("INSTALLED GGUF MODELS"))
+        val modelsListBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
         }
+
+        fun refreshModelList() {
+            modelsListBox.removeAllViews()
+            val modelsDir = File(filesDir, "models").apply { mkdirs() }
+            val ggufFiles = modelsDir.listFiles()?.filter { it.name.endsWith(".gguf") }?.sortedBy { it.name } ?: emptyList()
+
+            if (ggufFiles.isEmpty()) {
+                modelsListBox.addView(TextView(this).apply {
+                    text = "No GGUF models imported yet."
+                    setTextColor(textMuted)
+                    textSize = 12f
+                    setPadding(0, dp(4), 0, dp(6))
+                })
+            } else {
+                for (file in ggufFiles) {
+                    val isActive = llamaBridge.isLoaded && llamaBridge.loadedModelPath == file.absolutePath
+                    val row = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        background = roundedBox(
+                            if (isActive) surfaceElevated else surfaceCard,
+                            if (isActive) accentCyan else borderSubtle,
+                            10
+                        )
+                        setPadding(dp(12), dp(10), dp(10), dp(10))
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            bottomMargin = dp(6)
+                        }
+                    }
+
+                    val infoCol = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        setOnClickListener {
+                            dialogRef?.dismiss()
+                            loadNativeModelAsync(file.absolutePath, file.name)
+                        }
+                    }
+
+                    infoCol.addView(TextView(this).apply {
+                        text = if (isActive) "● ${file.name}" else file.name
+                        setTextColor(if (isActive) accentCyan else textPrimary)
+                        textSize = 12f
+                        typeface = if (isActive) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    })
+
+                    infoCol.addView(TextView(this).apply {
+                        text = "${formatFileSize(file.length())} • ${if (isActive) "Active in RAM" else "Tap to load"}"
+                        setTextColor(textMuted)
+                        textSize = 10f
+                    })
+
+                    val deleteBtn = TextView(this).apply {
+                        text = "Delete"
+                        setTextColor(dangerRed)
+                        textSize = 11f
+                        setPadding(dp(10), dp(6), dp(6), dp(6))
+                        setOnClickListener {
+                            if (isActive) llamaBridge.unload()
+                            file.delete()
+                            if (getSavedModelPath() == file.absolutePath) {
+                                prefs().edit().remove("model_path").remove("model_name").apply()
+                            }
+                            refreshModelList()
+                            initializeEngine()
+                        }
+                    }
+
+                    row.addView(infoCol)
+                    row.addView(deleteBtn)
+                    modelsListBox.addView(row)
+                }
+            }
+
+            val importRowBtn = TextView(this).apply {
+                text = "+ Import .gguf File from Storage"
+                setTextColor(accentCyan)
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                background = roundedBox(surfaceCard, borderSubtle, 10)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dp(2)
+                }
+                setOnClickListener {
+                    dialogRef?.dismiss()
+                    openModelFilePicker()
+                }
+            }
+            modelsListBox.addView(importRowBtn)
+        }
+
+        refreshModelList()
+        container.addView(modelsListBox)
+
+        // Context Window Selector Chips
+        container.addView(makeLabel("CONTEXT WINDOW (N_CTX)"))
+        var selectedCtx = getCtxSize()
+        val ctxOptions = listOf(1024, 2048, 4096)
+        val ctxRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val ctxChips = mutableMapOf<Int, TextView>()
+
+        fun updateCtxChips() {
+            ctxChips.forEach { (size, view) ->
+                val selected = size == selectedCtx
+                view.setTextColor(if (selected) bgObsidian else textPrimary)
+                view.background = roundedBox(
+                    if (selected) accentCyan else surfaceCard,
+                    if (selected) accentCyan else borderSubtle,
+                    10
+                )
+            }
+        }
+
+        ctxOptions.forEach { size ->
+            val chip = TextView(this).apply {
+                text = "$size"
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                setPadding(dp(16), dp(8), dp(16), dp(8))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = dp(6)
+                }
+                setOnClickListener {
+                    selectedCtx = size
+                    updateCtxChips()
+                }
+            }
+            ctxChips[size] = chip
+            ctxRow.addView(chip)
+        }
+        updateCtxChips()
+        container.addView(ctxRow)
+
+        // CPU Threads Slider
+        val maxCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
+        var selectedThreads = getCpuThreads().coerceIn(1, maxCores)
+        val threadLabel = makeLabel("CPU THREADS: $selectedThreads / $maxCores")
+        container.addView(threadLabel)
+
+        val threadSeek = SeekBar(this).apply {
+            max = maxCores - 1
+            progress = selectedThreads - 1
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    selectedThreads = progress + 1
+                    threadLabel.text = "CPU THREADS: $selectedThreads / $maxCores"
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+        }
+        container.addView(threadSeek)
 
         val urlInput = makeInput(getServerUrl())
         val promptInput = makeInput(getSystemPrompt(), multiline = true)
         val tempInput = makeInput(getTemperature().toString(), numeric = true)
         val tokensInput = makeInput(getMaxTokens().toString(), numeric = true)
 
-        container.addView(nativeSwitch)
-        container.addView(pickModelDialogBtn)
-        container.addView(makeLabel("EXTERNAL SERVER URL (HYBRID FALLBACK)"))
-        container.addView(urlInput)
         container.addView(makeLabel("SYSTEM PROMPT"))
         container.addView(promptInput)
         container.addView(makeLabel("TEMPERATURE (0.0 – 1.5)"))
         container.addView(tempInput)
-        container.addView(makeLabel("MAX TOKENS"))
+        container.addView(makeLabel("MAX RESPONSE TOKENS"))
         container.addView(tokensInput)
+        container.addView(makeLabel("EXTERNAL SERVER URL (HYBRID FALLBACK)"))
+        container.addView(urlInput)
 
         val scroll = ScrollView(this).apply { addView(container) }
 
-        val dialog = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("Glyph Settings")
+        dialogRef = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("Glyph Studio Settings")
             .setView(scroll)
-            .setPositiveButton("Save") { _, _ ->
+            .setPositiveButton("Save & Apply") { _, _ ->
                 val useNative = nativeSwitch.isChecked
                 val cleanUrl = urlInput.text.toString().trim().removeSuffix("/").ifEmpty { "http://127.0.0.1:8080" }
                 val cleanPrompt = promptInput.text.toString().trim().ifEmpty { defaultSystemPrompt }
@@ -711,20 +912,22 @@ class MainActivity : Activity() {
 
                 prefs().edit()
                     .putBoolean("native_mode", useNative)
+                    .putInt("n_ctx", selectedCtx)
+                    .putInt("n_threads", selectedThreads)
                     .putString("server_url", cleanUrl)
                     .putString("system_prompt", cleanPrompt)
                     .putFloat("temperature", cleanTemp)
                     .putInt("max_tokens", cleanTokens)
                     .apply()
 
-                initializeEngine()
-                Toast.makeText(this, "Settings saved", Toast.LENGTH_SHORT).show()
+                initializeEngine(forceReload = false)
+                Toast.makeText(this, "Settings applied", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null)
             .create()
 
-        dialog.show()
-        dialog.window?.setBackgroundDrawable(roundedBox(bgObsidian, borderSubtle, 16))
+        dialogRef.show()
+        dialogRef.window?.setBackgroundDrawable(roundedBox(bgObsidian, borderSubtle, 16))
     }
 
     private fun checkServerHealth() {
@@ -868,6 +1071,7 @@ class MainActivity : Activity() {
     }
 
     private data class BubbleHolder(
+        val senderTag: TextView,
         val contentBox: LinearLayout,
         val streamTextView: TextView,
         var latestRawText: String
@@ -922,7 +1126,7 @@ class MainActivity : Activity() {
         }
 
         contentBox.addView(streamTextView)
-        val holder = BubbleHolder(contentBox, streamTextView, initialText)
+        val holder = BubbleHolder(senderTag, contentBox, streamTextView, initialText)
 
         val copyMsgBtn = TextView(this).apply {
             text = "Copy"
@@ -951,6 +1155,22 @@ class MainActivity : Activity() {
         scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
     }
 
+    private fun buildContextWindowMessages(systemPrompt: String): List<Pair<String, String>> {
+        // Reserve ~40% of context budget for prompt history (~3.5 chars/token) so KV cache never overflows
+        val charBudget = (getCtxSize() * 2.2).toInt().coerceAtLeast(1500)
+        val selected = mutableListOf<Pair<String, String>>()
+        var usedChars = systemPrompt.length
+
+        for (i in conversationHistory.indices.reversed()) {
+            val turn = conversationHistory[i]
+            if (usedChars + turn.second.length > charBudget && selected.isNotEmpty()) break
+            selected.add(0, turn)
+            usedChars += turn.second.length
+        }
+
+        return listOf("system" to systemPrompt) + selected
+    }
+
     private fun sendMessage() {
         val prompt = inputField.text.toString().trim()
         if (prompt.isEmpty() || isGenerating) return
@@ -975,21 +1195,26 @@ class MainActivity : Activity() {
 
         val assistantBubble = addMessageBubble(isUser = false, initialText = "...")
         val fullReply = StringBuilder()
+        var tokenCount = 0
+        val startTimeMs = SystemClock.elapsedRealtime()
 
         executor.execute {
             try {
-                if (nativeMode) {
-                    val chatList = mutableListOf("system" to activeSystemPrompt)
-                    chatList.addAll(conversationHistory.takeLast(12))
+                val contextMessages = buildContextWindowMessages(activeSystemPrompt)
 
+                if (nativeMode) {
                     llamaBridge.generate(
-                        messages = chatList,
+                        messages = contextMessages,
                         temperature = activeTemp,
                         maxTokens = activeMaxTokens
                     ) { token ->
+                        tokenCount++
                         fullReply.append(token)
                         val snapshot = fullReply.toString()
+                        val elapsedSec = ((SystemClock.elapsedRealtime() - startTimeMs) / 1000.0).coerceAtLeast(0.1)
+                        val tps = String.format(Locale.US, "%.1f", tokenCount / elapsedSec)
                         mainHandler.post {
+                            assistantBubble.senderTag.text = "GLYPH • $tps tok/s"
                             assistantBubble.latestRawText = snapshot
                             assistantBubble.streamTextView.text = snapshot
                             scrollToBottom()
@@ -1006,8 +1231,7 @@ class MainActivity : Activity() {
                     }
 
                     val messagesArray = JSONArray().apply {
-                        put(JSONObject().put("role", "system").put("content", activeSystemPrompt))
-                        for ((role, content) in conversationHistory.takeLast(16)) {
+                        for ((role, content) in contextMessages) {
                             put(JSONObject().put("role", role).put("content", content))
                         }
                     }
@@ -1043,9 +1267,13 @@ class MainActivity : Activity() {
                                         ""
                                     }
                                     if (token.isNotEmpty()) {
+                                        tokenCount++
                                         fullReply.append(token)
                                         val snapshot = fullReply.toString()
+                                        val elapsedSec = ((SystemClock.elapsedRealtime() - startTimeMs) / 1000.0).coerceAtLeast(0.1)
+                                        val tps = String.format(Locale.US, "%.1f", tokenCount / elapsedSec)
                                         mainHandler.post {
+                                            assistantBubble.senderTag.text = "GLYPH • $tps tok/s"
                                             assistantBubble.latestRawText = snapshot
                                             assistantBubble.streamTextView.text = snapshot
                                             scrollToBottom()
@@ -1059,9 +1287,13 @@ class MainActivity : Activity() {
                 }
 
                 val finalResponse = fullReply.toString()
+                val totalSec = ((SystemClock.elapsedRealtime() - startTimeMs) / 1000.0).coerceAtLeast(0.1)
+                val finalTps = String.format(Locale.US, "%.1f", tokenCount / totalSec)
+
                 if (finalResponse.isNotEmpty()) {
                     conversationHistory.add("assistant" to finalResponse)
                     mainHandler.post {
+                        assistantBubble.senderTag.text = "GLYPH • $finalTps tok/s ($tokenCount tok)"
                         assistantBubble.latestRawText = finalResponse
                         renderFormattedContent(assistantBubble.contentBox, finalResponse)
                         scrollToBottom()
