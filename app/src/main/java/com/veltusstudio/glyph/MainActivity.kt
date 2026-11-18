@@ -36,7 +36,10 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
@@ -53,17 +56,63 @@ class MainActivity : Activity() {
     private val dangerRed = Color.parseColor("#EF4444")
 
     private val pickModelRequestCode = 9001
-    private val starterModelName = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
-    private val starterModelUrl =
-        "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+
+    private data class CatalogModel(
+        val title: String,
+        val fileName: String,
+        val sizeLabel: String,
+        val badge: String,
+        val url: String
+    )
+
+    private val modelCatalog = listOf(
+        CatalogModel(
+            title = "Llama 3.2 1B Instruct",
+            fileName = "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+            sizeLabel = "808 MB",
+            badge = "Ultra-Fast • 2GB+ RAM",
+            url = "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+        ),
+        CatalogModel(
+            title = "Qwen 2.5 1.5B Instruct",
+            fileName = "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+            sizeLabel = "1.12 GB",
+            badge = "Balanced • 3GB+ RAM",
+            url = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+        ),
+        CatalogModel(
+            title = "Qwen 2.5 Coder 1.5B",
+            fileName = "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+            sizeLabel = "1.12 GB",
+            badge = "Code & Scripts • 3GB+ RAM",
+            url = "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+        ),
+        CatalogModel(
+            title = "Qwen 2.5 3B Instruct",
+            fileName = "qwen2.5-3b-instruct-q4_k_m.gguf",
+            sizeLabel = "2.10 GB",
+            badge = "High Reasoning • 6GB+ RAM",
+            url = "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf"
+        )
+    )
+
+    private data class ChatSession(
+        val id: String,
+        var title: String,
+        var updatedAt: Long,
+        val messages: MutableList<Pair<String, String>>
+    )
 
     private val defaultSystemPrompt =
-        "You are Glyph, a standalone local-first AI assistant crafted by Veltus Studio, running offline on a local Qwen model. Never claim to be made by Anthropic, OpenAI, or Google. Be concise, helpful, and direct."
+        "You are Glyph, a standalone local-first AI assistant crafted by Veltus Studio, running offline on a local language model. Never claim to be made by Anthropic, OpenAI, or Google. Be concise, helpful, and direct."
 
     private val executor = Executors.newCachedThreadPool()
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val conversationHistory = mutableListOf<Pair<String, String>>()
     private val llamaBridge = LlamaBridge()
+
+    private val savedSessions = mutableListOf<ChatSession>()
+    private var activeSessionId: String = UUID.randomUUID().toString()
+    private val conversationHistory = mutableListOf<Pair<String, String>>()
 
     private lateinit var subtitleText: TextView
     private lateinit var statusDot: View
@@ -117,6 +166,7 @@ class MainActivity : Activity() {
                 }
             }
 
+            loadSessionsFromDisk()
             initializeEngine()
         } catch (e: Throwable) {
             val errorText = TextView(this).apply {
@@ -160,6 +210,236 @@ class MainActivity : Activity() {
         statusLabel.text = label
     }
 
+    // --- Persistent Chat Storage ---
+
+    private fun sessionsFile(): File = File(filesDir, "chats.json")
+
+    private fun loadSessionsFromDisk() {
+        savedSessions.clear()
+        val file = sessionsFile()
+        if (!file.exists()) return
+        try {
+            val arr = JSONArray(file.readText(Charsets.UTF_8))
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val id = obj.getString("id")
+                val title = obj.getString("title")
+                val updatedAt = obj.optLong("updatedAt", System.currentTimeMillis())
+                val msgsJson = obj.getJSONArray("messages")
+                val msgs = mutableListOf<Pair<String, String>>()
+                for (j in 0 until msgsJson.length()) {
+                    val m = msgsJson.getJSONObject(j)
+                    msgs.add(m.getString("role") to m.getString("content"))
+                }
+                if (msgs.isNotEmpty()) {
+                    savedSessions.add(ChatSession(id, title, updatedAt, msgs))
+                }
+            }
+            savedSessions.sortByDescending { it.updatedAt }
+            val lastId = prefs().getString("active_session_id", null)
+            val target = savedSessions.firstOrNull { it.id == lastId } ?: savedSessions.firstOrNull()
+            if (target != null) {
+                switchToSession(target)
+            }
+        } catch (_: Exception) { }
+    }
+
+    private fun persistActiveSession() {
+        if (conversationHistory.isEmpty()) return
+        val firstUserPrompt = conversationHistory.firstOrNull { it.first == "user" }?.second ?: "Untitled Chat"
+        val cleanTitle = firstUserPrompt.replace('\n', ' ').trim().take(42).let {
+            if (firstUserPrompt.length > 42) "$it..." else it
+        }
+        val now = System.currentTimeMillis()
+        val existingIdx = savedSessions.indexOfFirst { it.id == activeSessionId }
+        val session = ChatSession(
+            id = activeSessionId,
+            title = cleanTitle,
+            updatedAt = now,
+            messages = conversationHistory.toMutableList()
+        )
+        if (existingIdx >= 0) {
+            savedSessions[existingIdx] = session
+        } else {
+            savedSessions.add(0, session)
+        }
+        savedSessions.sortByDescending { it.updatedAt }
+        prefs().edit().putString("active_session_id", activeSessionId).apply()
+        writeSessionsToDisk()
+    }
+
+    private fun writeSessionsToDisk() {
+        try {
+            val arr = JSONArray()
+            for (s in savedSessions.take(40)) {
+                val msgsArr = JSONArray()
+                for ((role, content) in s.messages) {
+                    msgsArr.put(JSONObject().put("role", role).put("content", content))
+                }
+                arr.put(
+                    JSONObject()
+                        .put("id", s.id)
+                        .put("title", s.title)
+                        .put("updatedAt", s.updatedAt)
+                        .put("messages", msgsArr)
+                )
+            }
+            sessionsFile().writeText(arr.toString(), Charsets.UTF_8)
+        } catch (_: Exception) { }
+    }
+
+    private fun switchToSession(session: ChatSession) {
+        activeSessionId = session.id
+        conversationHistory.clear()
+        conversationHistory.addAll(session.messages)
+        prefs().edit().putString("active_session_id", activeSessionId).apply()
+
+        messageContainer.removeAllViews()
+        if (conversationHistory.isEmpty()) {
+            emptyState.visibility = View.VISIBLE
+            messageContainer.addView(emptyState)
+        } else {
+            emptyState.visibility = View.GONE
+            for ((role, content) in conversationHistory) {
+                val holder = addMessageBubble(isUser = (role == "user"), initialText = content)
+                if (role != "user") {
+                    renderFormattedContent(holder.contentBox, content)
+                }
+            }
+            scrollToBottom()
+        }
+    }
+
+    private fun openHistoryDialog() {
+        if (isGenerating) {
+            Toast.makeText(this, "Wait for current generation to finish", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgObsidian)
+            setPadding(dp(18), dp(14), dp(18), dp(10))
+        }
+
+        var dialogRef: AlertDialog? = null
+
+        val newSessionBtn = TextView(this).apply {
+            text = "+ Start New Conversation"
+            setTextColor(bgObsidian)
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = roundedBox(accentCyan, Color.TRANSPARENT, 10, 0)
+            setPadding(dp(14), dp(11), dp(14), dp(11))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(12)
+            }
+            setOnClickListener {
+                dialogRef?.dismiss()
+                startNewChat()
+            }
+        }
+        container.addView(newSessionBtn)
+
+        val listBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val fmt = SimpleDateFormat("MMM d, h:mm a", Locale.US)
+
+        fun renderSessionList() {
+            listBox.removeAllViews()
+            if (savedSessions.isEmpty()) {
+                listBox.addView(TextView(this).apply {
+                    text = "No saved conversations yet."
+                    setTextColor(textMuted)
+                    textSize = 12f
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(16), 0, dp(16))
+                })
+                return
+            }
+
+            for (session in savedSessions) {
+                val isCurrent = session.id == activeSessionId
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    background = roundedBox(
+                        if (isCurrent) surfaceElevated else surfaceCard,
+                        if (isCurrent) accentCyan else borderSubtle,
+                        10
+                    )
+                    setPadding(dp(12), dp(10), dp(10), dp(10))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        bottomMargin = dp(8)
+                    }
+                }
+
+                val infoCol = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    setOnClickListener {
+                        dialogRef?.dismiss()
+                        switchToSession(session)
+                    }
+                }
+
+                infoCol.addView(TextView(this).apply {
+                    text = session.title
+                    setTextColor(if (isCurrent) accentCyan else textPrimary)
+                    textSize = 13f
+                    typeface = if (isCurrent) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    maxLines = 1
+                })
+
+                infoCol.addView(TextView(this).apply {
+                    text = "${session.messages.size} msgs • ${fmt.format(Date(session.updatedAt))}"
+                    setTextColor(textMuted)
+                    textSize = 10f
+                })
+
+                val delBtn = TextView(this).apply {
+                    text = "Delete"
+                    setTextColor(dangerRed)
+                    textSize = 11f
+                    setPadding(dp(10), dp(6), dp(4), dp(6))
+                    setOnClickListener {
+                        savedSessions.removeAll { it.id == session.id }
+                        writeSessionsToDisk()
+                        if (session.id == activeSessionId) {
+                            startNewChat(silent = true)
+                        }
+                        renderSessionList()
+                    }
+                }
+
+                row.addView(infoCol)
+                row.addView(delBtn)
+                listBox.addView(row)
+            }
+        }
+
+        renderSessionList()
+        container.addView(listBox)
+
+        val scroll = ScrollView(this).apply { addView(container) }
+        dialogRef = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("Chat History")
+            .setView(scroll)
+            .setNegativeButton("Close", null)
+            .create()
+
+        dialogRef.show()
+        dialogRef.window?.setBackgroundDrawable(roundedBox(bgObsidian, borderSubtle, 16))
+    }
+
+    // --- Engine & Model Management ---
+
     private fun initializeEngine(forceReload: Boolean = false) {
         if (!isNativeMode()) {
             subtitleText.text = "Hybrid Server Mode"
@@ -187,7 +467,7 @@ class MainActivity : Activity() {
                 llamaBridge.loadedCtxSize == desiredCtx
             ) {
                 setStatus("Ready", "#10B981")
-                subtitleText.text = "$targetName • ${desiredCtx} ctx"
+                subtitleText.text = "$targetName • $desiredCtx ctx"
                 return
             }
             loadNativeModelAsync(targetFile.absolutePath, targetName)
@@ -300,19 +580,24 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun downloadStarterModel() {
-        if (isBusyModel || isGenerating) return
+    private fun downloadCatalogModel(model: CatalogModel) {
+        if (isBusyModel || isGenerating) {
+            Toast.makeText(this, "Another download or generation is active", Toast.LENGTH_SHORT).show()
+            return
+        }
         isBusyModel = true
-        setStatus("Downloading...", "#F59E0B")
+        setStatus("0%", "#F59E0B")
+        subtitleText.text = "Downloading ${model.title}..."
         downloadBtn.isEnabled = false
+        Toast.makeText(this, "Downloading ${model.title} (${model.sizeLabel})...", Toast.LENGTH_SHORT).show()
 
         executor.execute {
             try {
                 val modelsDir = File(filesDir, "models").apply { mkdirs() }
-                val destFile = File(modelsDir, starterModelName)
-                val tempFile = File(modelsDir, "$starterModelName.part")
+                val destFile = File(modelsDir, model.fileName)
+                val tempFile = File(modelsDir, "${model.fileName}.part")
 
-                val conn = (URL(starterModelUrl).openConnection() as HttpURLConnection).apply {
+                val conn = (URL(model.url).openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = true
                     connectTimeout = 15000
                     readTimeout = 30000
@@ -335,8 +620,9 @@ class MainActivity : Activity() {
                                     lastPct = pct
                                     mainHandler.post {
                                         statusLabel.text = "$pct%"
+                                        subtitleText.text = "Downloading ${model.title} ($pct%)"
                                         downloadBtn.text = "Downloading... $pct%"
-                                        emptySubLabel.text = "Downloading Qwen 2.5 1.5B ($pct%)..."
+                                        emptySubLabel.text = "Downloading ${model.title} ($pct%)..."
                                     }
                                 }
                             }
@@ -351,8 +637,8 @@ class MainActivity : Activity() {
                 mainHandler.post {
                     isBusyModel = false
                     downloadBtn.isEnabled = true
-                    downloadBtn.text = "Download Qwen 1.5B (1.1 GB)"
-                    loadNativeModelAsync(destFile.absolutePath, starterModelName)
+                    downloadBtn.text = "Download Qwen 1.5B (1.12 GB)"
+                    loadNativeModelAsync(destFile.absolutePath, model.fileName)
                 }
             } catch (e: Exception) {
                 mainHandler.post {
@@ -360,6 +646,7 @@ class MainActivity : Activity() {
                     downloadBtn.isEnabled = true
                     downloadBtn.text = "Retry Download Qwen 1.5B"
                     setStatus("Download Failed", "#EF4444")
+                    subtitleText.text = "Download failed"
                     emptySubLabel.text = "Download failed: ${e.message}"
                 }
             }
@@ -407,7 +694,7 @@ class MainActivity : Activity() {
         val titleText = TextView(this).apply {
             text = "GLYPH"
             setTextColor(textPrimary)
-            textSize = 20f
+            textSize = 19f
             typeface = Typeface.DEFAULT_BOLD
             letterSpacing = 0.12f
         }
@@ -415,27 +702,44 @@ class MainActivity : Activity() {
         subtitleText = TextView(this).apply {
             text = "by Veltus Studio"
             setTextColor(textMuted)
-            textSize = 11f
+            textSize = 10.5f
             maxLines = 1
         }
 
         titleCol.addView(titleText)
         titleCol.addView(subtitleText)
 
-        // New Chat Pill
-        val newChatBtn = TextView(this).apply {
-            text = "+ New"
+        // History Pill
+        val historyBtn = TextView(this).apply {
+            text = "History"
             setTextColor(textPrimary)
             textSize = 11f
             background = roundedBox(surfaceCard, borderSubtle, 50)
-            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setPadding(dp(9), dp(6), dp(9), dp(6))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                marginEnd = dp(6)
+                marginEnd = dp(5)
             }
-            setOnClickListener { clearChat() }
+            setOnClickListener { openHistoryDialog() }
+        }
+
+        // New Chat Pill
+        val newChatBtn = TextView(this).apply {
+            text = "+"
+            setTextColor(textPrimary)
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            background = roundedBox(surfaceCard, borderSubtle, 50)
+            setPadding(dp(9), dp(4), dp(9), dp(4))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginEnd = dp(5)
+            }
+            setOnClickListener { startNewChat() }
         }
 
         // Settings & Model Manager Pill
@@ -444,12 +748,12 @@ class MainActivity : Activity() {
             setTextColor(textPrimary)
             textSize = 12f
             background = roundedBox(surfaceCard, borderSubtle, 50)
-            setPadding(dp(10), dp(5), dp(10), dp(5))
+            setPadding(dp(9), dp(5), dp(9), dp(5))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                marginEnd = dp(6)
+                marginEnd = dp(5)
             }
             setOnClickListener { openSettingsDialog() }
         }
@@ -459,20 +763,20 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = roundedBox(surfaceCard, borderSubtle, 50)
-            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setPadding(dp(9), dp(6), dp(9), dp(6))
         }
 
         statusDot = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(8), dp(8)).apply {
-                marginEnd = dp(6)
+            layoutParams = LinearLayout.LayoutParams(dp(7), dp(7)).apply {
+                marginEnd = dp(5)
             }
             background = roundedBox(Color.parseColor("#F59E0B"), Color.TRANSPARENT, 50, 0)
         }
 
         statusLabel = TextView(this).apply {
-            text = "Init..."
+            text = "Init"
             setTextColor(textMuted)
-            textSize = 11f
+            textSize = 10.5f
         }
 
         statusPill.addView(statusDot)
@@ -482,6 +786,7 @@ class MainActivity : Activity() {
         }
 
         header.addView(titleCol)
+        header.addView(historyBtn)
         header.addView(newChatBtn)
         header.addView(settingsBtn)
         header.addView(statusPill)
@@ -511,7 +816,7 @@ class MainActivity : Activity() {
         emptyState = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(16), dp(38), dp(16), dp(16))
+            setPadding(dp(16), dp(36), dp(16), dp(16))
         }
 
         val emptyTitle = TextView(this).apply {
@@ -548,19 +853,33 @@ class MainActivity : Activity() {
         }
 
         downloadBtn = TextView(this).apply {
-            text = "Download Qwen 1.5B (1.1 GB)"
+            text = "Download Qwen 1.5B (1.12 GB)"
             setTextColor(textPrimary)
             textSize = 12f
             gravity = Gravity.CENTER
             background = roundedBox(surfaceCard, borderSubtle, 12)
             setPadding(dp(18), dp(10), dp(18), dp(10))
-            setOnClickListener { downloadStarterModel() }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(10)
+            }
+            setOnClickListener { downloadCatalogModel(modelCatalog[1]) }
+        }
+
+        val catalogShortcut = TextView(this).apply {
+            text = "Browse All Models in ⚙"
+            setTextColor(accentCyan)
+            textSize = 11.5f
+            setOnClickListener { openSettingsDialog() }
         }
 
         emptyState.addView(emptyTitle)
         emptyState.addView(emptySubLabel)
         emptyState.addView(pickBtn)
         emptyState.addView(downloadBtn)
+        emptyState.addView(catalogShortcut)
         messageContainer.addView(emptyState)
         scrollView.addView(messageContainer)
         root.addView(scrollView)
@@ -663,16 +982,20 @@ class MainActivity : Activity() {
         return root
     }
 
-    private fun clearChat() {
+    private fun startNewChat(silent: Boolean = false) {
         if (isGenerating) {
             llamaBridge.stop()
             return
         }
+        activeSessionId = UUID.randomUUID().toString()
         conversationHistory.clear()
+        prefs().edit().putString("active_session_id", activeSessionId).apply()
         messageContainer.removeAllViews()
         emptyState.visibility = View.VISIBLE
         messageContainer.addView(emptyState)
-        Toast.makeText(this, "New conversation started", Toast.LENGTH_SHORT).show()
+        if (!silent) {
+            Toast.makeText(this, "New conversation started", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun openSettingsDialog() {
@@ -687,7 +1010,7 @@ class MainActivity : Activity() {
             setTextColor(accentCyan)
             textSize = 11f
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, dp(12), 0, dp(6))
+            setPadding(0, dp(14), 0, dp(6))
         }
 
         fun makeInput(value: String, multiline: Boolean = false, numeric: Boolean = false): EditText = EditText(this).apply {
@@ -714,14 +1037,11 @@ class MainActivity : Activity() {
             isChecked = isNativeMode()
             setPadding(0, dp(4), 0, dp(8))
         }
-
         container.addView(nativeSwitch)
 
         // Installed GGUF Models List
         container.addView(makeLabel("INSTALLED GGUF MODELS"))
-        val modelsListBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+        val modelsListBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         fun refreshModelList() {
             modelsListBox.removeAllViews()
@@ -730,7 +1050,7 @@ class MainActivity : Activity() {
 
             if (ggufFiles.isEmpty()) {
                 modelsListBox.addView(TextView(this).apply {
-                    text = "No GGUF models imported yet."
+                    text = "No GGUF models installed yet."
                     setTextColor(textMuted)
                     textSize = 12f
                     setPadding(0, dp(4), 0, dp(6))
@@ -800,7 +1120,7 @@ class MainActivity : Activity() {
             }
 
             val importRowBtn = TextView(this).apply {
-                text = "+ Import .gguf File from Storage"
+                text = "+ Import .gguf File from Phone Storage"
                 setTextColor(accentCyan)
                 textSize = 12f
                 typeface = Typeface.DEFAULT_BOLD
@@ -823,6 +1143,67 @@ class MainActivity : Activity() {
 
         refreshModelList()
         container.addView(modelsListBox)
+
+        // Curated 1-Tap GGUF Model Catalog
+        container.addView(makeLabel("1-TAP GGUF MODEL CATALOG"))
+        val modelsDir = File(filesDir, "models")
+        for (cat in modelCatalog) {
+            val alreadyDownloaded = File(modelsDir, cat.fileName).exists()
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = roundedBox(surfaceCard, borderSubtle, 10)
+                setPadding(dp(12), dp(10), dp(10), dp(10))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = dp(6)
+                }
+            }
+
+            val col = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            col.addView(TextView(this).apply {
+                text = cat.title
+                setTextColor(textPrimary)
+                textSize = 12.5f
+                typeface = Typeface.DEFAULT_BOLD
+            })
+
+            col.addView(TextView(this).apply {
+                text = "${cat.sizeLabel} • ${cat.badge}"
+                setTextColor(textMuted)
+                textSize = 10f
+            })
+
+            val actionBtn = TextView(this).apply {
+                text = if (alreadyDownloaded) "Installed" else "Download"
+                setTextColor(if (alreadyDownloaded) textMuted else bgObsidian)
+                textSize = 11f
+                typeface = Typeface.DEFAULT_BOLD
+                background = roundedBox(
+                    if (alreadyDownloaded) surfaceElevated else accentCyan,
+                    borderSubtle,
+                    8,
+                    if (alreadyDownloaded) 1 else 0
+                )
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                if (!alreadyDownloaded) {
+                    setOnClickListener {
+                        dialogRef?.dismiss()
+                        downloadCatalogModel(cat)
+                    }
+                }
+            }
+
+            card.addView(col)
+            card.addView(actionBtn)
+            container.addView(card)
+        }
 
         // Context Window Selector Chips
         container.addView(makeLabel("CONTEXT WINDOW (N_CTX)"))
@@ -947,7 +1328,7 @@ class MainActivity : Activity() {
 
             mainHandler.post {
                 if (online) {
-                    setStatus("Server Online", "#10B981")
+                    setStatus("Online", "#10B981")
                     emptySubLabel.text = "Connected to $currentUrl"
                 } else {
                     setStatus("Offline", "#EF4444")
@@ -1156,7 +1537,6 @@ class MainActivity : Activity() {
     }
 
     private fun buildContextWindowMessages(systemPrompt: String): List<Pair<String, String>> {
-        // Reserve ~40% of context budget for prompt history (~3.5 chars/token) so KV cache never overflows
         val charBudget = (getCtxSize() * 2.2).toInt().coerceAtLeast(1500)
         val selected = mutableListOf<Pair<String, String>>()
         var usedChars = systemPrompt.length
@@ -1192,6 +1572,7 @@ class MainActivity : Activity() {
 
         addMessageBubble(isUser = true, initialText = prompt)
         conversationHistory.add("user" to prompt)
+        persistActiveSession()
 
         val assistantBubble = addMessageBubble(isUser = false, initialText = "...")
         val fullReply = StringBuilder()
@@ -1292,6 +1673,7 @@ class MainActivity : Activity() {
 
                 if (finalResponse.isNotEmpty()) {
                     conversationHistory.add("assistant" to finalResponse)
+                    persistActiveSession()
                     mainHandler.post {
                         assistantBubble.senderTag.text = "GLYPH • $finalTps tok/s ($tokenCount tok)"
                         assistantBubble.latestRawText = finalResponse
