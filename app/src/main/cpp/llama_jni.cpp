@@ -94,7 +94,7 @@ Java_com_veltusstudio_glyph_LlamaBridge_nativeGenerate(
     if (!g_model || !g_ctx) return;
 
     g_stop_flag.store(false);
-    llama_kv_self_clear(g_ctx);
+    llama_memory_clear(llama_get_memory(g_ctx), true);
 
     jsize msgCount = env->GetArrayLength(rolesArray);
     std::vector<std::string> roles_storage(msgCount);
