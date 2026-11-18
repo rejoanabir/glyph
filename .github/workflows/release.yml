@@ -28,13 +28,9 @@ jobs:
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
-          echo "$SIGNING_KEY_BASE64" | base64 -d > release.jks
-          cat << PROP > release.properties
-          storeFile=release.jks
-          storePassword=$SIGNING_STORE_PASSWORD
-          keyAlias=$SIGNING_KEY_ALIAS
-          keyPassword=$SIGNING_KEY_PASSWORD
-          PROP
+          printf "%s" "$SIGNING_KEY_BASE64" | base64 -d > release.jks
+          printf "storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n" \
+            "$SIGNING_STORE_PASSWORD" "$SIGNING_KEY_ALIAS" "$SIGNING_KEY_PASSWORD" > release.properties
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
