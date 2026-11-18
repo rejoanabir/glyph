@@ -21,19 +21,34 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Decode Release Keystore
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          echo "$SIGNING_KEY_BASE64" | base64 -d > release.jks
+          cat << PROP > release.properties
+          storeFile=release.jks
+          storePassword=$SIGNING_STORE_PASSWORD
+          keyAlias=$SIGNING_KEY_ALIAS
+          keyPassword=$SIGNING_KEY_PASSWORD
+          PROP
+
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug
+      - name: Build Signed Release APK
+        run: ./gradlew assembleRelease
 
-      - name: Rename APK
-        run: mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/Glyph-latest.apk
+      - name: Rename Release APK
+        run: mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/Glyph-v1.0.apk
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: Glyph Latest Build
-          files: app/build/outputs/apk/debug/Glyph-latest.apk
+          tag_name: v1.0
+          name: Glyph v1.0 Release
+          files: app/build/outputs/apk/release/Glyph-v1.0.apk
           overwrite: true
