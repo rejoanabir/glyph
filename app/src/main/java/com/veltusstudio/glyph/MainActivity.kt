@@ -50,15 +50,15 @@ import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
 
-    private val bgObsidian = Color.parseColor("#080B10")
-    private val surfaceCard = Color.parseColor("#0F151F")
-    private val surfaceElevated = Color.parseColor("#141D2B")
-    private val codeBlockBg = Color.parseColor("#06090E")
-    private val userBubbleBg = Color.parseColor("#132033")
-    private val borderSubtle = Color.parseColor("#1C2636")
-    private val accentCyan = Color.parseColor("#00D2FF")
-    private val textPrimary = Color.parseColor("#F1F5F9")
-    private val textMuted = Color.parseColor("#94A3B8")
+    private val bgObsidian = Color.parseColor("#09090B")
+    private val surfaceCard = Color.parseColor("#CC141417")
+    private val surfaceElevated = Color.parseColor("#E61C1C21")
+    private val codeBlockBg = Color.parseColor("#E60B0B0D")
+    private val userBubbleBg = Color.parseColor("#D9202026")
+    private val borderSubtle = Color.parseColor("#26FFFFFF")
+    private val accentCyan = Color.parseColor("#E4E4E7")
+    private val textPrimary = Color.parseColor("#F8FAFC")
+    private val textMuted = Color.parseColor("#9CA3AF")
     private val dangerRed = Color.parseColor("#EF4444")
 
     private val pickModelRequestCode = 9001
@@ -176,7 +176,7 @@ class MainActivity : Activity() {
             setContentView(rootView)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                rootView.setOnApplyWindowInsetsListener { v, insets ->
+                (rootView as FrameLayout).getChildAt(1).setOnApplyWindowInsetsListener { v, insets ->
                     val sysBars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
                     v.setPadding(
                         dp(16) + sysBars.left,
@@ -216,6 +216,16 @@ class MainActivity : Activity() {
             setColor(fillColor)
             cornerRadius = dp(radiusDp).toFloat()
             if (strokeDp > 0) setStroke(dp(strokeDp), strokeColor)
+        }
+    }
+
+    private fun silverGradientBox(radiusDp: Int): GradientDrawable {
+        return GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(Color.parseColor("#D4D4D8"), Color.parseColor("#9CA3AF"))
+        ).apply {
+            cornerRadius = dp(radiusDp).toFloat()
+            setStroke(dp(1), Color.parseColor("#4DFFFFFF"))
         }
     }
 
@@ -304,7 +314,7 @@ class MainActivity : Activity() {
             micButton.background = roundedBox(dangerRed, Color.TRANSPARENT, 12, 0)
             inputField.hint = "Listening..."
         } else {
-            micButton.text = "Mic"
+            micButton.text = "🎤 Mic"
             micButton.setTextColor(accentCyan)
             micButton.background = roundedBox(surfaceCard, borderSubtle, 12)
             inputField.hint = "Ask Glyph anything..."
@@ -918,10 +928,28 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi(): View {
+        val frame = FrameLayout(this).apply {
+            setBackgroundColor(bgObsidian)
+        }
+
+        val bgImage = ImageView(this).apply {
+            setImageResource(R.drawable.bg_glyph_silk)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        frame.addView(bgImage)
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(bgObsidian)
+            setBackgroundColor(Color.TRANSPARENT)
             setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
         }
 
         // 1. Top Studio Header
@@ -1060,23 +1088,50 @@ class MainActivity : Activity() {
             )
         }
 
-        // Empty State Placeholder
+        // Empty State Glass Hero Card
         emptyState = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(16), dp(36), dp(16), dp(16))
+            setPadding(dp(4), dp(14), dp(4), dp(8))
+        }
+
+        val heroCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            background = roundedBox(surfaceCard, borderSubtle, 22)
+            setPadding(dp(20), dp(22), dp(20), dp(22))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val badgePill = TextView(this).apply {
+            text = "✦  Local-First Intelligence"
+            setTextColor(textPrimary)
+            textSize = 11.5f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = roundedBox(surfaceElevated, borderSubtle, 50)
+            setPadding(dp(14), dp(6), dp(14), dp(6))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(14)
+            }
         }
 
         val emptyTitle = TextView(this).apply {
-            text = "Local-First Intelligence"
-            setTextColor(accentCyan)
-            textSize = 16f
+            text = "Standalone On-Device Mode"
+            setTextColor(textPrimary)
+            textSize = 17f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
         }
 
         emptySubLabel = TextView(this).apply {
-            text = "Standalone On-Device Mode\nPick a .gguf file or download Qwen 1.5B below to begin"
+            text = "Pick a .gguf file or download Qwen 1.5B below to begin"
             setTextColor(textMuted)
             textSize = 12f
             gravity = Gravity.CENTER
@@ -1084,15 +1139,15 @@ class MainActivity : Activity() {
         }
 
         val pickBtn = TextView(this).apply {
-            text = "Select Model (.gguf)"
+            text = "📁  Select Model (.gguf)"
             setTextColor(bgObsidian)
-            textSize = 13f
+            textSize = 13.5f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            background = roundedBox(accentCyan, Color.TRANSPARENT, 12, 0)
-            setPadding(dp(20), dp(12), dp(20), dp(12))
+            background = silverGradientBox(14)
+            setPadding(dp(20), dp(13), dp(20), dp(13))
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 bottomMargin = dp(10)
@@ -1101,32 +1156,51 @@ class MainActivity : Activity() {
         }
 
         downloadBtn = TextView(this).apply {
-            text = "Download Qwen 1.5B (1.12 GB)"
+            text = "⬇  Download Qwen 1.5B (1.12 GB)"
             setTextColor(textPrimary)
-            textSize = 12f
+            textSize = 12.5f
             gravity = Gravity.CENTER
-            background = roundedBox(surfaceCard, borderSubtle, 12)
-            setPadding(dp(18), dp(10), dp(18), dp(10))
+            background = roundedBox(surfaceElevated, borderSubtle, 14)
+            setPadding(dp(18), dp(12), dp(18), dp(12))
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dp(10)
-            }
+            )
             setOnClickListener { downloadCatalogModel(modelCatalog[1]) }
         }
 
+        heroCard.addView(badgePill)
+        heroCard.addView(emptyTitle)
+        heroCard.addView(emptySubLabel)
+        heroCard.addView(pickBtn)
+        heroCard.addView(downloadBtn)
+
+        val dividerLine = View(this).apply {
+            setBackgroundColor(borderSubtle)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(1)
+            ).apply {
+                topMargin = dp(18)
+                bottomMargin = dp(14)
+            }
+        }
+
         val catalogShortcut = TextView(this).apply {
-            text = "Browse All Models in ⚙"
-            setTextColor(accentCyan)
-            textSize = 11.5f
+            text = "🗂   Browse All Models in ⚙"
+            setTextColor(textPrimary)
+            textSize = 12.5f
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(6), dp(4), dp(6), dp(4))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
             setOnClickListener { openSettingsDialog() }
         }
 
-        emptyState.addView(emptyTitle)
-        emptyState.addView(emptySubLabel)
-        emptyState.addView(pickBtn)
-        emptyState.addView(downloadBtn)
+        emptyState.addView(heroCard)
+        emptyState.addView(dividerLine)
         emptyState.addView(catalogShortcut)
         messageContainer.addView(emptyState)
         scrollView.addView(messageContainer)
@@ -1148,10 +1222,10 @@ class MainActivity : Activity() {
         }
 
         val presets = listOf(
-            "Summarize" to "Summarize cleanly:\n",
-            "Fix Grammar" to "Fix grammar and improve clarity:\n",
-            "Explain Code" to "Explain this code step by step:\n",
-            "Bullet Points" to "Convert this into concise bullet points:\n"
+            "📄 Summarize" to "Summarize cleanly:\n",
+            "🪄 Fix Grammar" to "Fix grammar and improve clarity:\n",
+            "</> Explain Code" to "Explain this code step by step:\n",
+            "≡ Bullet Point" to "Convert this into concise bullet points:\n"
         )
 
         presets.forEach { (label, promptPrefix) ->
@@ -1239,7 +1313,7 @@ class MainActivity : Activity() {
         }
 
         webToggleBtn = TextView(this).apply {
-            text = "Web"
+            text = "🌐"
             setTextColor(textMuted)
             textSize = 11f
             typeface = Typeface.DEFAULT_BOLD
@@ -1279,7 +1353,7 @@ class MainActivity : Activity() {
         }
 
         micButton = TextView(this).apply {
-            text = "Mic"
+            text = "🎤 Mic"
             setTextColor(accentCyan)
             textSize = 12f
             typeface = Typeface.DEFAULT_BOLD
@@ -1296,12 +1370,12 @@ class MainActivity : Activity() {
         }
 
         sendButton = Button(this).apply {
-            text = "Send"
+            text = "➤ Send"
             setTextColor(bgObsidian)
-            textSize = 14f
+            textSize = 13.5f
             typeface = Typeface.DEFAULT_BOLD
             isAllCaps = false
-            background = roundedBox(accentCyan, Color.TRANSPARENT, 12, 0)
+            background = silverGradientBox(14)
             setPadding(dp(16), dp(12), dp(16), dp(12))
             setOnClickListener {
                 if (isGenerating) {
@@ -1318,8 +1392,9 @@ class MainActivity : Activity() {
         inputRow.addView(micButton)
         inputRow.addView(sendButton)
         root.addView(inputRow)
+        frame.addView(root)
 
-        return root
+        return frame
     }
 
     private fun startNewChat(silent: Boolean = false) {
@@ -2173,7 +2248,7 @@ class MainActivity : Activity() {
                 setKeepAliveService(false)
                 mainHandler.post {
                     isGenerating = false
-                    sendButton.text = "Send"
+                    sendButton.text = "➤ Send"
                     scrollToBottom()
                 }
             }
