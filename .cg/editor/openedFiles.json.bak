@@ -1,0 +1,21 @@
+{
+  "allFiles": [
+    {
+      "file": "/storage/emulated/0/CodeOnTheGoProjects/Glyph/app/src/main/AndroidManifest.xml",
+      "selection": {
+        "end": {
+          "column": 0,
+          "index": 811,
+          "line": 22
+        },
+        "start": {
+          "column": 0,
+          "index": 811,
+          "line": 22
+        }
+      }
+    }
+  ],
+  "projectPath": "/storage/emulated/0/CodeOnTheGoProjects/Glyph",
+  "selectedFile": "/storage/emulated/0/CodeOnTheGoProjects/Glyph/app/src/main/AndroidManifest.xml"
+}
