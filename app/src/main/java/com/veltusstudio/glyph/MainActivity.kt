@@ -1,11 +1,13 @@
 package com.veltusstudio.glyph
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -16,6 +18,9 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.OpenableColumns
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.text.InputType
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -56,6 +61,7 @@ class MainActivity : Activity() {
     private val dangerRed = Color.parseColor("#EF4444")
 
     private val pickModelRequestCode = 9001
+    private val micPermissionRequestCode = 9002
 
     private data class CatalogModel(
         val title: String,
@@ -96,15 +102,18 @@ class MainActivity : Activity() {
         )
     )
 
+    private val personaPresets = listOf(
+        "General" to "You are Glyph, a standalone local-first AI assistant crafted by Veltus Studio, running offline on a local language model. Never claim to be made by Anthropic, OpenAI, or Google. Be concise, helpful, and direct.",
+        "Coder" to "You are Glyph, an expert senior software engineer crafted by Veltus Studio. Provide clean, production-ready code with brief explanations and edge-case handling. Be direct and skip filler.",
+        "Editor" to "You are Glyph, a sharp technical editor crafted by Veltus Studio. Improve clarity, grammar, and structure while preserving the user's voice. Output the improved text cleanly."
+    )
+
     private data class ChatSession(
         val id: String,
         var title: String,
         var updatedAt: Long,
         val messages: MutableList<Pair<String, String>>
     )
-
-    private val defaultSystemPrompt =
-        "You are Glyph, a standalone local-first AI assistant crafted by Veltus Studio, running offline on a local language model. Never claim to be made by Anthropic, OpenAI, or Google. Be concise, helpful, and direct."
 
     private val executor = Executors.newCachedThreadPool()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -123,8 +132,11 @@ class MainActivity : Activity() {
     private lateinit var scrollView: ScrollView
     private lateinit var emptyState: LinearLayout
     private lateinit var inputField: EditText
+    private lateinit var micButton: TextView
     private lateinit var sendButton: Button
 
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var isListening = false
     private var isGenerating = false
     private var isBusyModel = false
 
@@ -133,7 +145,7 @@ class MainActivity : Activity() {
     private fun getSavedModelPath(): String = prefs().getString("model_path", "") ?: ""
     private fun getSavedModelName(): String = prefs().getString("model_name", "") ?: ""
     private fun getServerUrl(): String = prefs().getString("server_url", "http://127.0.0.1:8080") ?: "http://127.0.0.1:8080"
-    private fun getSystemPrompt(): String = prefs().getString("system_prompt", defaultSystemPrompt) ?: defaultSystemPrompt
+    private fun getSystemPrompt(): String = prefs().getString("system_prompt", personaPresets[0].second) ?: personaPresets[0].second
     private fun getTemperature(): Float = prefs().getFloat("temperature", 0.7f)
     private fun getMaxTokens(): Int = prefs().getInt("max_tokens", 1024)
     private fun getCtxSize(): Int = prefs().getInt("n_ctx", 2048)
@@ -183,6 +195,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        speechRecognizer?.destroy()
         llamaBridge.unload()
     }
 
@@ -210,7 +223,92 @@ class MainActivity : Activity() {
         statusLabel.text = label
     }
 
-    // --- Persistent Chat Storage ---
+    // --- Voice Input (SpeechRecognizer) ---
+
+    private fun toggleVoiceInput() {
+        if (isGenerating) return
+        if (isListening) {
+            speechRecognizer?.stopListening()
+            setListeningState(false)
+            return
+        }
+
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), micPermissionRequestCode)
+            return
+        }
+
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            Toast.makeText(this, "Speech recognition unavailable on this device", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (speechRecognizer == null) {
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
+                setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) = setListeningState(true)
+                    override fun onBeginningOfSpeech() {}
+                    override fun onRmsChanged(rmsdB: Float) {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() = setListeningState(false)
+                    override fun onError(error: Int) {
+                        setListeningState(false)
+                        Toast.makeText(this@MainActivity, "Voice input stopped ($error)", Toast.LENGTH_SHORT).show()
+                    }
+                    override fun onResults(results: Bundle?) {
+                        setListeningState(false)
+                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        val spoken = matches?.firstOrNull()?.trim().orEmpty()
+                        if (spoken.isNotEmpty()) {
+                            val current = inputField.text.toString()
+                            val updated = if (current.isBlank()) spoken else "$current$spoken"
+                            inputField.setText(updated)
+                            inputField.setSelection(updated.length)
+                        }
+                    }
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                        if (!partial.isNullOrBlank()) {
+                            inputField.hint = "Hearing: $partial..."
+                        }
+                    }
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                })
+            }
+        }
+
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        }
+        speechRecognizer?.startListening(intent)
+        setListeningState(true)
+    }
+
+    private fun setListeningState(listening: Boolean) {
+        isListening = listening
+        if (listening) {
+            micButton.text = "●"
+            micButton.setTextColor(bgObsidian)
+            micButton.background = roundedBox(dangerRed, Color.TRANSPARENT, 12, 0)
+            inputField.hint = "Listening..."
+        } else {
+            micButton.text = "Mic"
+            micButton.setTextColor(accentCyan)
+            micButton.background = roundedBox(surfaceCard, borderSubtle, 12)
+            inputField.hint = "Ask Glyph anything..."
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == micPermissionRequestCode && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            toggleVoiceInput()
+        }
+    }
+
+    // --- Persistent Chat Storage & Markdown Export ---
 
     private fun sessionsFile(): File = File(filesDir, "chats.json")
 
@@ -288,6 +386,26 @@ class MainActivity : Activity() {
         } catch (_: Exception) { }
     }
 
+    private fun shareSessionAsMarkdown(title: String, messages: List<Pair<String, String>>) {
+        if (messages.isEmpty()) {
+            Toast.makeText(this, "Nothing to export yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val md = buildString {
+            append("# $title\n\n")
+            for ((role, content) in messages) {
+                val speaker = if (role == "user") "**You**" else "**Glyph**"
+                append("### $speaker\n$content\n\n---\n\n")
+            }
+        }
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Glyph Chat: $title")
+            putExtra(Intent.EXTRA_TEXT, md)
+        }
+        startActivity(Intent.createChooser(sendIntent, "Export Markdown Chat"))
+    }
+
     private fun switchToSession(session: ChatSession) {
         activeSessionId = session.id
         conversationHistory.clear()
@@ -324,26 +442,50 @@ class MainActivity : Activity() {
 
         var dialogRef: AlertDialog? = null
 
-        val newSessionBtn = TextView(this).apply {
-            text = "+ Start New Conversation"
-            setTextColor(bgObsidian)
-            textSize = 13f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            background = roundedBox(accentCyan, Color.TRANSPARENT, 10, 0)
-            setPadding(dp(14), dp(11), dp(14), dp(11))
+        val actionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 bottomMargin = dp(12)
             }
+        }
+
+        val newSessionBtn = TextView(this).apply {
+            text = "+ New Chat"
+            setTextColor(bgObsidian)
+            textSize = 12.5f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = roundedBox(accentCyan, Color.TRANSPARENT, 10, 0)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(8)
+            }
             setOnClickListener {
                 dialogRef?.dismiss()
                 startNewChat()
             }
         }
-        container.addView(newSessionBtn)
+
+        val exportCurrentBtn = TextView(this).apply {
+            text = "Share .md"
+            setTextColor(textPrimary)
+            textSize = 12.5f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = roundedBox(surfaceCard, borderSubtle, 10)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setOnClickListener {
+                val currentTitle = savedSessions.firstOrNull { it.id == activeSessionId }?.title ?: "Glyph Conversation"
+                shareSessionAsMarkdown(currentTitle, conversationHistory)
+            }
+        }
+
+        actionRow.addView(newSessionBtn)
+        actionRow.addView(exportCurrentBtn)
+        container.addView(actionRow)
 
         val listBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val fmt = SimpleDateFormat("MMM d, h:mm a", Locale.US)
@@ -403,11 +545,19 @@ class MainActivity : Activity() {
                     textSize = 10f
                 })
 
+                val shareBtn = TextView(this).apply {
+                    text = "Share"
+                    setTextColor(accentCyan)
+                    textSize = 11f
+                    setPadding(dp(8), dp(6), dp(8), dp(6))
+                    setOnClickListener { shareSessionAsMarkdown(session.title, session.messages) }
+                }
+
                 val delBtn = TextView(this).apply {
-                    text = "Delete"
+                    text = "Del"
                     setTextColor(dangerRed)
                     textSize = 11f
-                    setPadding(dp(10), dp(6), dp(4), dp(6))
+                    setPadding(dp(8), dp(6), dp(4), dp(6))
                     setOnClickListener {
                         savedSessions.removeAll { it.id == session.id }
                         writeSessionsToDisk()
@@ -419,6 +569,7 @@ class MainActivity : Activity() {
                 }
 
                 row.addView(infoCol)
+                row.addView(shareBtn)
                 row.addView(delBtn)
                 listBox.addView(row)
             }
@@ -429,7 +580,7 @@ class MainActivity : Activity() {
 
         val scroll = ScrollView(this).apply { addView(container) }
         dialogRef = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("Chat History")
+            .setTitle("Chat History & Export")
             .setView(scroll)
             .setNegativeButton("Close", null)
             .create()
@@ -930,7 +1081,7 @@ class MainActivity : Activity() {
         chipScroll.addView(chipRow)
         root.addView(chipScroll)
 
-        // 4. Input Bar
+        // 4. Input Bar (Input + Mic + Send)
         val inputRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -954,8 +1105,25 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 1f
             ).apply {
-                marginEnd = dp(8)
+                marginEnd = dp(6)
             }
+        }
+
+        micButton = TextView(this).apply {
+            text = "Mic"
+            setTextColor(accentCyan)
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = roundedBox(surfaceCard, borderSubtle, 12)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginEnd = dp(6)
+            }
+            setOnClickListener { toggleVoiceInput() }
         }
 
         sendButton = Button(this).apply {
@@ -965,7 +1133,7 @@ class MainActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
             isAllCaps = false
             background = roundedBox(accentCyan, Color.TRANSPARENT, 12, 0)
-            setPadding(dp(18), dp(12), dp(18), dp(12))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
             setOnClickListener {
                 if (isGenerating) {
                     llamaBridge.stop()
@@ -976,6 +1144,7 @@ class MainActivity : Activity() {
         }
 
         inputRow.addView(inputField)
+        inputRow.addView(micButton)
         inputRow.addView(sendButton)
         root.addView(inputRow)
 
@@ -1265,13 +1434,43 @@ class MainActivity : Activity() {
         }
         container.addView(threadSeek)
 
-        val urlInput = makeInput(getServerUrl())
+        // 1-Tap System Prompt Personas
+        container.addView(makeLabel("SYSTEM PERSONA PRESETS"))
         val promptInput = makeInput(getSystemPrompt(), multiline = true)
+        val personaRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(8)
+            }
+        }
+        personaPresets.forEach { (label, presetPrompt) ->
+            val pChip = TextView(this).apply {
+                text = label
+                setTextColor(textPrimary)
+                textSize = 11.5f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                background = roundedBox(surfaceCard, borderSubtle, 10)
+                setPadding(dp(10), dp(7), dp(10), dp(7))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = dp(6)
+                }
+                setOnClickListener {
+                    promptInput.setText(presetPrompt)
+                }
+            }
+            personaRow.addView(pChip)
+        }
+        container.addView(personaRow)
+        container.addView(promptInput)
+
+        val urlInput = makeInput(getServerUrl())
         val tempInput = makeInput(getTemperature().toString(), numeric = true)
         val tokensInput = makeInput(getMaxTokens().toString(), numeric = true)
 
-        container.addView(makeLabel("SYSTEM PROMPT"))
-        container.addView(promptInput)
         container.addView(makeLabel("TEMPERATURE (0.0 – 1.5)"))
         container.addView(tempInput)
         container.addView(makeLabel("MAX RESPONSE TOKENS"))
@@ -1287,7 +1486,7 @@ class MainActivity : Activity() {
             .setPositiveButton("Save & Apply") { _, _ ->
                 val useNative = nativeSwitch.isChecked
                 val cleanUrl = urlInput.text.toString().trim().removeSuffix("/").ifEmpty { "http://127.0.0.1:8080" }
-                val cleanPrompt = promptInput.text.toString().trim().ifEmpty { defaultSystemPrompt }
+                val cleanPrompt = promptInput.text.toString().trim().ifEmpty { personaPresets[0].second }
                 val cleanTemp = tempInput.text.toString().toFloatOrNull()?.coerceIn(0f, 2f) ?: 0.7f
                 val cleanTokens = tokensInput.text.toString().toIntOrNull()?.coerceIn(64, 4096) ?: 1024
 
@@ -1372,7 +1571,62 @@ class MainActivity : Activity() {
 
     private fun renderFormattedContent(container: LinearLayout, rawText: String) {
         container.removeAllViews()
-        val parts = rawText.split("```")
+
+        // Extract optional <think>...</think> reasoning block (Qwen3.5 / DeepSeek-R1)
+        var displayBody = rawText
+        val thinkStart = rawText.indexOf("<think>")
+        if (thinkStart != -1) {
+            val thinkEnd = rawText.indexOf("</think>", thinkStart + 7)
+            val thoughtText = if (thinkEnd != -1) {
+                displayBody = (rawText.substring(0, thinkStart) + rawText.substring(thinkEnd + 8)).trim()
+                rawText.substring(thinkStart + 7, thinkEnd).trim()
+            } else {
+                displayBody = rawText.substring(0, thinkStart).trim()
+                rawText.substring(thinkStart + 7).trim()
+            }
+
+            if (thoughtText.isNotEmpty()) {
+                val thinkCard = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = roundedBox(surfaceElevated, borderSubtle, 10)
+                    setPadding(dp(10), dp(8), dp(10), dp(8))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        topMargin = dp(4)
+                        bottomMargin = dp(6)
+                    }
+                }
+
+                val thinkBodyView = TextView(this).apply {
+                    text = thoughtText
+                    setTextColor(textMuted)
+                    textSize = 11.5f
+                    visibility = View.GONE
+                    setPadding(0, dp(6), 0, 0)
+                    setTextIsSelectable(true)
+                }
+
+                val thinkToggle = TextView(this).apply {
+                    text = "▸ Thought Process (${thoughtText.length} chars) — Tap to expand"
+                    setTextColor(accentCyan)
+                    textSize = 11f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setOnClickListener {
+                        val expanding = thinkBodyView.visibility == View.GONE
+                        thinkBodyView.visibility = if (expanding) View.VISIBLE else View.GONE
+                        text = if (expanding) "▾ Thought Process — Tap to collapse" else "▸ Thought Process (${thoughtText.length} chars) — Tap to expand"
+                    }
+                }
+
+                thinkCard.addView(thinkToggle)
+                thinkCard.addView(thinkBodyView)
+                container.addView(thinkCard)
+            }
+        }
+
+        val parts = displayBody.split("```")
         for (index in parts.indices) {
             val segment = parts[index]
             if (index % 2 == 0) {
@@ -1452,6 +1706,7 @@ class MainActivity : Activity() {
     }
 
     private data class BubbleHolder(
+        val cardView: LinearLayout,
         val senderTag: TextView,
         val contentBox: LinearLayout,
         val streamTextView: TextView,
@@ -1507,17 +1762,29 @@ class MainActivity : Activity() {
         }
 
         contentBox.addView(streamTextView)
-        val holder = BubbleHolder(senderTag, contentBox, streamTextView, initialText)
+        val holder = BubbleHolder(card, senderTag, contentBox, streamTextView, initialText)
+
+        headerRow.addView(senderTag)
+
+        if (!isUser) {
+            val retryBtn = TextView(this).apply {
+                text = "Retry"
+                setTextColor(textMuted)
+                textSize = 10f
+                setPadding(dp(6), dp(2), dp(8), dp(2))
+                setOnClickListener { regenerateLastResponse() }
+            }
+            headerRow.addView(retryBtn)
+        }
 
         val copyMsgBtn = TextView(this).apply {
             text = "Copy"
             setTextColor(textMuted)
             textSize = 10f
-            setPadding(dp(8), dp(2), dp(2), dp(2))
+            setPadding(dp(6), dp(2), dp(2), dp(2))
             setOnClickListener { copyToClipboard("Message", holder.latestRawText, this) }
         }
 
-        headerRow.addView(senderTag)
         headerRow.addView(copyMsgBtn)
 
         card.addView(headerRow)
@@ -1530,6 +1797,18 @@ class MainActivity : Activity() {
 
         scrollToBottom()
         return holder
+    }
+
+    private fun regenerateLastResponse() {
+        if (isGenerating || conversationHistory.isEmpty()) return
+        if (conversationHistory.last().first == "assistant") {
+            conversationHistory.removeAt(conversationHistory.lastIndex)
+            if (messageContainer.childCount > 0) {
+                messageContainer.removeViewAt(messageContainer.childCount - 1)
+            }
+        }
+        if (conversationHistory.isEmpty() || conversationHistory.last().first != "user") return
+        runAssistantCompletion()
     }
 
     private fun scrollToBottom() {
@@ -1561,18 +1840,25 @@ class MainActivity : Activity() {
             return
         }
 
+        inputField.setText("")
+        addMessageBubble(isUser = true, initialText = prompt)
+        conversationHistory.add("user" to prompt)
+        persistActiveSession()
+
+        runAssistantCompletion()
+    }
+
+    private fun runAssistantCompletion() {
+        val nativeMode = isNativeMode()
+        if (nativeMode && !llamaBridge.isLoaded) return
+
         val activeUrl = getServerUrl()
         val activeSystemPrompt = getSystemPrompt()
         val activeTemp = getTemperature()
         val activeMaxTokens = getMaxTokens()
 
-        inputField.setText("")
         isGenerating = true
         sendButton.text = "Stop"
-
-        addMessageBubble(isUser = true, initialText = prompt)
-        conversationHistory.add("user" to prompt)
-        persistActiveSession()
 
         val assistantBubble = addMessageBubble(isUser = false, initialText = "...")
         val fullReply = StringBuilder()
