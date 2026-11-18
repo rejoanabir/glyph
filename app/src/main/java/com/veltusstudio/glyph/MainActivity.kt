@@ -368,7 +368,7 @@ class MainActivity : Activity() {
     private fun fetchWebSnippets(query: String): String {
         return try {
             val encoded = URLEncoder.encode(query, "UTF-8")
-            val conn = (URL("https://lite.duckduckgo.com/lite/?q=$encoded").openConnection() as HttpURLConnection).apply {
+            val conn = (URL("[https://lite.duckduckgo.com/lite/?q=$encoded](https://lite.duckduckgo.com/lite/?q=$encoded)").openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36")
                 connectTimeout = 5000
@@ -378,12 +378,11 @@ class MainActivity : Activity() {
             conn.disconnect()
             val snippetRegex = Regex("<td class=['\"]result-snippet['\"]>(.*?)</td>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
             val snippets = snippetRegex.findAll(html)
-                .map { it.groupValues[1].replace(Regex("<[^>]+>"), " ").replace("&quot;", """).replace("&amp;", "&").replace("&#x27;", "'").replace(Regex("\s+"), " ").trim() }
+                .map { it.groupValues[1].replace(Regex("<[^>]+>"), " ").replace("&quot;", "\"").replace("&amp;", "&").replace("&#x27;", "'").replace(Regex("\\s+"), " ").trim() }
                 .filter { it.length > 20 }
                 .take(3)
                 .toList()
-            if (snippets.isEmpty()) "" else snippets.mapIndexed { idx, s -> "[${idx + 1}] $s" }.joinToString("
-")
+            if (snippets.isEmpty()) "" else snippets.mapIndexed { idx, s -> "[${idx + 1}] $s" }.joinToString("\n")
         } catch (_: Exception) {
             ""
         }
@@ -2015,8 +2014,9 @@ class MainActivity : Activity() {
         val fileSnapName = attachedFileName
         val fileSnapBody = attachedFileContent
         val displayPrompt = if (fileSnapName != null) "[File: $fileSnapName]\n$prompt" else prompt
+        val fence = "\u0060\u0060\u0060"
         val modelPrompt = if (fileSnapName != null && fileSnapBody != null) {
-            "Attached file ($fileSnapName):\n```\n$fileSnapBody\n```\n\nUser request: $prompt"
+            "Attached file ($fileSnapName):\n$fence\n$fileSnapBody\n$fence\n\nUser request: $prompt"
         } else {
             prompt
         }
