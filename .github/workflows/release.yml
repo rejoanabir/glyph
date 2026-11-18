@@ -34,3 +34,4 @@ jobs:
           tag_name: latest
           name: Glyph Latest Build
           files: app/build/outputs/apk/debug/Glyph-latest.apk
+          overwrite: true
