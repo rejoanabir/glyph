@@ -41,6 +41,7 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -62,6 +63,15 @@ class MainActivity : Activity() {
 
     private val pickModelRequestCode = 9001
     private val micPermissionRequestCode = 9002
+    private val pickAttachmentRequestCode = 9003
+
+    private var attachedFileName: String? = null
+    private var attachedFileContent: String? = null
+    private var webSearchEnabled: Boolean = false
+
+    private lateinit var attachmentBanner: LinearLayout
+    private lateinit var attachmentLabel: TextView
+    private lateinit var webToggleBtn: TextView
 
     private data class CatalogModel(
         val title: String,
@@ -309,6 +319,90 @@ class MainActivity : Activity() {
     }
 
     // --- Persistent Chat Storage & Markdown Export ---
+
+    private fun openAttachmentPicker() {
+        if (isGenerating) return
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        @Suppress("DEPRECATION")
+        startActivityForResult(intent, pickAttachmentRequestCode)
+    }
+
+    private fun loadAttachmentFromUri(uri: Uri) {
+        val name = queryDisplayName(uri)
+        executor.execute {
+            try {
+                val maxChars = (getCtxSize() * 2).coerceIn(2000, 12000)
+                val rawText = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+                    val buf = CharArray(maxChars)
+                    val read = reader.read(buf)
+                    if (read > 0) String(buf, 0, read) else ""
+                }.orEmpty()
+
+                mainHandler.post {
+                    if (rawText.isBlank()) {
+                        Toast.makeText(this, "File is empty or unreadable", Toast.LENGTH_SHORT).show()
+                    } else {
+                        attachedFileName = name
+                        attachedFileContent = rawText
+                        attachmentLabel.text = "Attached: $name (${rawText.length} chars)"
+                        attachmentBanner.visibility = View.VISIBLE
+                    }
+                }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    Toast.makeText(this, "Failed to read file: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun clearAttachment() {
+        attachedFileName = null
+        attachedFileContent = null
+        attachmentBanner.visibility = View.GONE
+    }
+
+    private fun fetchWebSnippets(query: String): String {
+        return try {
+            val encoded = URLEncoder.encode(query, "UTF-8")
+            val conn = (URL("https://lite.duckduckgo.com/lite/?q=$encoded").openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36")
+                connectTimeout = 5000
+                readTimeout = 6000
+            }
+            val html = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            conn.disconnect()
+            val snippetRegex = Regex("<td class=['\"]result-snippet['\"]>(.*?)</td>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+            val snippets = snippetRegex.findAll(html)
+                .map { it.groupValues[1].replace(Regex("<[^>]+>"), " ").replace("&quot;", """).replace("&amp;", "&").replace("&#x27;", "'").replace(Regex("\s+"), " ").trim() }
+                .filter { it.length > 20 }
+                .take(3)
+                .toList()
+            if (snippets.isEmpty()) "" else snippets.mapIndexed { idx, s -> "[${idx + 1}] $s" }.joinToString("
+")
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun setKeepAliveService(active: Boolean) {
+        try {
+            val svcIntent = Intent(this, GlyphKeepAliveService::class.java)
+            if (active) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(svcIntent)
+                } else {
+                    startService(svcIntent)
+                }
+            } else {
+                stopService(svcIntent)
+            }
+        } catch (_: Exception) { }
+    }
 
     private fun sessionsFile(): File = File(filesDir, "chats.json")
 
@@ -679,6 +773,10 @@ class MainActivity : Activity() {
         if (requestCode == pickModelRequestCode && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             importUriAndLoadModel(uri)
+        }
+        if (requestCode == pickAttachmentRequestCode && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            loadAttachmentFromUri(uri)
         }
     }
 
@@ -1081,7 +1179,40 @@ class MainActivity : Activity() {
         chipScroll.addView(chipRow)
         root.addView(chipScroll)
 
-        // 4. Input Bar (Input + Mic + Send)
+        // Attachment Preview Banner
+        attachmentBanner = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            background = roundedBox(surfaceElevated, accentCyan, 10)
+            setPadding(dp(12), dp(7), dp(10), dp(7))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(6)
+            }
+        }
+        attachmentLabel = TextView(this).apply {
+            text = ""
+            setTextColor(accentCyan)
+            textSize = 11.5f
+            maxLines = 1
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val clearAttachBtn = TextView(this).apply {
+            text = "✕"
+            setTextColor(dangerRed)
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(8), dp(2), dp(4), dp(2))
+            setOnClickListener { clearAttachment() }
+        }
+        attachmentBanner.addView(attachmentLabel)
+        attachmentBanner.addView(clearAttachBtn)
+        root.addView(attachmentBanner)
+
+        // 4. Input Bar (+ Attach + Web + Input + Mic + Send)
         val inputRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1089,6 +1220,45 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
+        }
+
+        val attachBtn = TextView(this).apply {
+            text = "+"
+            setTextColor(accentCyan)
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = roundedBox(surfaceCard, borderSubtle, 12)
+            setPadding(dp(11), dp(9), dp(11), dp(9))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginEnd = dp(5)
+            }
+            setOnClickListener { openAttachmentPicker() }
+        }
+
+        webToggleBtn = TextView(this).apply {
+            text = "Web"
+            setTextColor(textMuted)
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = roundedBox(surfaceCard, borderSubtle, 12)
+            setPadding(dp(9), dp(12), dp(9), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginEnd = dp(5)
+            }
+            setOnClickListener {
+                webSearchEnabled = !webSearchEnabled
+                setTextColor(if (webSearchEnabled) bgObsidian else textMuted)
+                background = if (webSearchEnabled) roundedBox(accentCyan, Color.TRANSPARENT, 12, 0) else roundedBox(surfaceCard, borderSubtle, 12)
+                Toast.makeText(this@MainActivity, if (webSearchEnabled) "Live Web Grounding ON" else "Offline Mode ON", Toast.LENGTH_SHORT).show()
+            }
         }
 
         inputField = EditText(this).apply {
@@ -1143,6 +1313,8 @@ class MainActivity : Activity() {
             }
         }
 
+        inputRow.addView(attachBtn)
+        inputRow.addView(webToggleBtn)
         inputRow.addView(inputField)
         inputRow.addView(micButton)
         inputRow.addView(sendButton)
@@ -1840,9 +2012,19 @@ class MainActivity : Activity() {
             return
         }
 
+        val fileSnapName = attachedFileName
+        val fileSnapBody = attachedFileContent
+        val displayPrompt = if (fileSnapName != null) "[File: $fileSnapName]\n$prompt" else prompt
+        val modelPrompt = if (fileSnapName != null && fileSnapBody != null) {
+            "Attached file ($fileSnapName):\n```\n$fileSnapBody\n```\n\nUser request: $prompt"
+        } else {
+            prompt
+        }
+
+        clearAttachment()
         inputField.setText("")
-        addMessageBubble(isUser = true, initialText = prompt)
-        conversationHistory.add("user" to prompt)
+        addMessageBubble(isUser = true, initialText = displayPrompt)
+        conversationHistory.add("user" to modelPrompt)
         persistActiveSession()
 
         runAssistantCompletion()
@@ -1859,15 +2041,25 @@ class MainActivity : Activity() {
 
         isGenerating = true
         sendButton.text = "Stop"
+        setKeepAliveService(true)
+        val useWebNow = webSearchEnabled
 
-        val assistantBubble = addMessageBubble(isUser = false, initialText = "...")
+        val assistantBubble = addMessageBubble(isUser = false, initialText = if (useWebNow) "Searching web..." else "...")
         val fullReply = StringBuilder()
         var tokenCount = 0
         val startTimeMs = SystemClock.elapsedRealtime()
 
         executor.execute {
             try {
-                val contextMessages = buildContextWindowMessages(activeSystemPrompt)
+                var effectiveSystem = activeSystemPrompt
+                if (useWebNow) {
+                    val lastUserQ = conversationHistory.lastOrNull { it.first == "user" }?.second?.take(200).orEmpty()
+                    val snippets = fetchWebSnippets(lastUserQ)
+                    if (snippets.isNotEmpty()) {
+                        effectiveSystem += "\n\nLive Web Search Context (2026):\n$snippets\nUse these facts if relevant."
+                    }
+                }
+                val contextMessages = buildContextWindowMessages(effectiveSystem)
 
                 if (nativeMode) {
                     llamaBridge.generate(
@@ -1978,6 +2170,7 @@ class MainActivity : Activity() {
                     assistantBubble.streamTextView.text = errMsg
                 }
             } finally {
+                setKeepAliveService(false)
                 mainHandler.post {
                     isGenerating = false
                     sendButton.text = "Send"
