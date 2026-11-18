@@ -39,13 +39,13 @@ jobs:
         run: ./gradlew assembleRelease
 
       - name: Rename Release APK
-        run: mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/Glyph-v1.5.apk
+        run: mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/Glyph-v1.6.apk
 
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.5
-          name: Glyph v1.5 Release
+          tag_name: v1.6
+          name: Glyph v1.6 Release
           body: "${{ github.event.head_commit.message }}"
-          files: app/build/outputs/apk/release/Glyph-v1.5.apk
+          files: app/build/outputs/apk/release/Glyph-v1.6.apk
           overwrite: true
