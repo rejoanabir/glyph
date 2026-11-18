@@ -17,7 +17,7 @@ val hasValidSigningProps = keystorePropsFile.exists().also { exists ->
         FileInputStream(keystorePropsFile).use { keystoreProps.load(it) }
     }
 }.let {
-    listOf("storeFile", "storePassword", 
+    listOf("storeFile", "storePassword",
             "keyAlias", "keyPassword").all { key ->
         keystoreProps[key] != null
     }
@@ -25,12 +25,12 @@ val hasValidSigningProps = keystorePropsFile.exists().also { exists ->
 
 android {
     namespace = "com.veltusstudio.glyph"
-    compileSdk = 36 
-    
+    compileSdk = 36
+
     lint {
         checkReleaseBuilds = false
     }
-        
+
     signingConfigs {
         if (hasValidSigningProps) {
             create("release") {
@@ -44,19 +44,36 @@ android {
 
     defaultConfig {
         applicationId = "com.veltusstudio.glyph"
-        minSdk = 26 
-        targetSdk = 36  
+        minSdk = 26
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
-        
-        vectorDrawables { 
+
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf("-O3", "-std=c++17")
+            }
+        }
+
+        vectorDrawables {
             useSupportLibrary = true
         }
     }
-    
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17 
-        targetCompatibility = JavaVersion.VERSION_17 
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     buildTypes {
@@ -91,7 +108,7 @@ android {
             resources.merges.add("nativeMain/default/manifest")
         }
     }
-    
+
     configurations.all {
         resolutionStrategy {
             force("org.jetbrains.kotlin:kotlin-stdlib:2.3.21")
