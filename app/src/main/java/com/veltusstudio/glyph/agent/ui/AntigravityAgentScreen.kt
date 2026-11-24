@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -82,7 +83,13 @@ fun AntigravityAgentScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
+                    Column(
+                        modifier = Modifier.clickable {
+                            if (daemonState != DaemonState.RUNNING) {
+                                daemonManager.startOrConnectDaemon(workspaceDir)
+                            }
+                        }
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "ANTIGRAVITY // WORKBENCH",
@@ -108,7 +115,7 @@ fun AntigravityAgentScreen(
                         }
                         Text(
                             text = if (daemonState == DaemonState.RUNNING) "ONLINE · HUB :1237 · GEMINI 2.5 FLASH" else statusMsg.uppercase(),
-                            color = Color(0xFF64748B),
+                            color = if (daemonState == DaemonState.RUNNING) Color(0xFF64748B) else Color(0xFFF59E0B),
                             fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
                             letterSpacing = 0.05.sp
@@ -125,6 +132,13 @@ fun AntigravityAgentScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { daemonManager.startOrConnectDaemon(workspaceDir) }) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Reconnect",
+                            tint = Color(0xFF94A3B8)
+                        )
+                    }
                     IconButton(onClick = { chatService.newSession() }) {
                         Icon(
                             imageVector = Icons.Default.Add,
@@ -244,6 +258,9 @@ fun AntigravityAgentScreen(
                                         if (inputText.isNotBlank()) {
                                             val text = inputText
                                             inputText = ""
+                                            if (daemonState != DaemonState.RUNNING) {
+                                                daemonManager.startOrConnectDaemon(workspaceDir)
+                                            }
                                             chatService.sendPrompt(text, workspaceDir)
                                         }
                                     },
@@ -267,81 +284,137 @@ fun AntigravityAgentScreen(
             }
         }
     ) { innerPadding ->
-        if (messages.isEmpty() && agentStatus == AgentStatus.IDLE) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.widthIn(max = 340.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            // Reconnect / offline alert banner
+            if (daemonState != DaemonState.RUNNING) {
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color(0xFF160F12),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBE123C)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .clickable { daemonManager.startOrConnectDaemon(workspaceDir) }
                 ) {
-                    Text(
-                        text = "[ AGY NATIVE WORKSPACE ]",
-                        color = Color(0xFF38BDF8),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.1.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Google Antigravity engine connected locally over port 1237. Select an action or write an instruction below.",
-                        color = Color(0xFF64748B),
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-
-                    val quickPrompts = listOf(
-                        "Review repository structure",
-                        "Run build or test scripts",
-                        "Check git status and pending changes",
-                        "Analyze code architecture"
-                    )
-
-                    quickPrompts.forEach { prompt ->
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "HUB CONNECTION REQUIRED",
+                                color = Color(0xFFF43F5E),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                text = "Port 1237 offline. Tap to connect or start daemon.",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                         Surface(
                             shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFF0F1218),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2330)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clickable {
-                                    chatService.sendPrompt(prompt, workspaceDir)
-                                }
+                            color = Color(0xFFE11D48),
+                            modifier = Modifier.clickable { daemonManager.startOrConnectDaemon(workspaceDir) }
                         ) {
                             Text(
-                                text = "> $prompt",
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 11.sp,
+                                text = "CONNECT",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
                     }
                 }
             }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(horizontal = 12.dp)
-            ) {
-                items(messages, key = { it.id }) { message ->
-                    MessageItem(message = message)
-                }
 
-                if (agentStatus == AgentStatus.THINKING && !liveThinking.isNullOrBlank()) {
-                    item {
-                        ThoughtCard(thoughtText = liveThinking ?: "", isStreaming = true)
+            if (messages.isEmpty() && agentStatus == AgentStatus.IDLE) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.widthIn(max = 340.dp)
+                    ) {
+                        Text(
+                            text = "[ AGY NATIVE WORKSPACE ]",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.1.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Google Antigravity engine connected locally over port 1237. Select an action or write an instruction below.",
+                            color = Color(0xFF64748B),
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        )
+
+                        val quickPrompts = listOf(
+                            "Review repository structure",
+                            "Run build or test scripts",
+                            "Check git status and pending changes",
+                            "Analyze code architecture"
+                        )
+
+                        quickPrompts.forEach { prompt ->
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFF0F1218),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2330)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clickable {
+                                        if (daemonState != DaemonState.RUNNING) {
+                                            daemonManager.startOrConnectDaemon(workspaceDir)
+                                        }
+                                        chatService.sendPrompt(prompt, workspaceDir)
+                                    }
+                            ) {
+                                Text(
+                                    text = "> $prompt",
+                                    color = Color(0xFFCBD5E1),
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 12.dp)
+                ) {
+                    items(messages, key = { it.id }) { message ->
+                        MessageItem(message = message)
+                    }
+
+                    if (agentStatus == AgentStatus.THINKING && !liveThinking.isNullOrBlank()) {
+                        item {
+                            ThoughtCard(thoughtText = liveThinking ?: "", isStreaming = true)
+                        }
                     }
                 }
             }

@@ -47,7 +47,7 @@ class AgyCsrfManager private constructor() {
     val securityToken: String get() = _securityToken.value
 
     // AGY Hub CSRF token (UUID string)
-    private val _hubCsrfToken = MutableStateFlow("")
+    private val _hubCsrfToken = MutableStateFlow(readInitialHubCsrfToken())
     val hubCsrfToken: String get() = _hubCsrfToken.value
 
     private val _csrfEvents = MutableSharedFlow<String>(extraBufferCapacity = 16)
@@ -60,6 +60,7 @@ class AgyCsrfManager private constructor() {
 
     private fun readInitialSecurityToken(): String {
         val candidates = listOf(
+            File("/storage/emulated/0/.antigravity_bin/csrf_token.txt"),
             File("/data/user/0/ai.antigem/files/home/.antigem_bridge/csrf_token.txt"),
             File(System.getenv("HOME") ?: "", ".antigem_bridge/csrf_token.txt")
         )
@@ -72,6 +73,22 @@ class AgyCsrfManager private constructor() {
             } catch (_: Exception) {}
         }
         return "0w6b8feu6b85"
+    }
+
+    private fun readInitialHubCsrfToken(): String {
+        val candidates = listOf(
+            File("/storage/emulated/0/.antigravity_bin/hub_csrf_token.txt"),
+            File("/data/user/0/ai.antigem/files/home/.antigem_bridge/hub_csrf_token.txt")
+        )
+        for (f in candidates) {
+            try {
+                if (f.exists()) {
+                    val t = f.readText().trim()
+                    if (t.isNotBlank()) return t
+                }
+            } catch (_: Exception) {}
+        }
+        return ""
     }
 
     fun setSecurityToken(token: String) {
@@ -113,6 +130,18 @@ class AgyCsrfManager private constructor() {
         } catch (e: Exception) {
             Log.w(TAG, "Failed to refresh CSRF from bridge: ${e.message}")
         }
+
+        val sharedFile = File("/storage/emulated/0/.antigravity_bin/hub_csrf_token.txt")
+        if (sharedFile.exists()) {
+            try {
+                val t = sharedFile.readText().trim()
+                if (t.isNotBlank()) {
+                    setHubCsrfToken(t)
+                    return t
+                }
+            } catch (_: Exception) {}
+        }
+
         return hubCsrfToken
     }
 

@@ -3,13 +3,15 @@ package com.veltusstudio.glyph.agent.daemon
 import android.content.Context
 import android.util.Log
 import com.veltusstudio.glyph.agent.core.AgyCsrfManager
-import com.veltusstudio.glyph.agent.core.AgyOkHttpClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import okhttp3.Request
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.net.InetSocketAddress
+import java.net.Socket
 
 enum class DaemonState {
     STOPPED,
@@ -42,47 +44,101 @@ class AgyDaemonManager(private val context: Context) {
     private val _daemonState = MutableStateFlow(DaemonState.STOPPED)
     val daemonState: StateFlow<DaemonState> = _daemonState.asStateFlow()
 
-    private val _statusMessage = MutableStateFlow("Agent daemon idle")
+    private val _statusMessage = MutableStateFlow("CHECKING HUB STATUS")
     val statusMessage: StateFlow<String> = _statusMessage.asStateFlow()
 
     private var bridgeProcess: Process? = null
 
     /**
-     * Checks if a candidate path for the `agy` ARM64 binary exists.
+     * Non-blocking socket probe to check if a TCP port is open.
      */
-    fun findAgyBinaryPath(): String? {
-        val candidates = listOf(
-            File(context.filesDir, "bin/agy").absolutePath,
-            File(context.filesDir, "home/.local/bin/agy").absolutePath,
-            "/data/user/0/ai.antigem/files/home/.local/bin/agy",
-            "/data/data/com.termux/files/home/.local/bin/agy",
-            System.getenv("HOME")?.let { "$it/.local/bin/agy" }
-        ).filterNotNull()
-
-        for (path in candidates) {
-            val f = File(path)
-            if (f.exists() && (f.canExecute() || f.setExecutable(true))) {
-                return f.absolutePath
-            }
-        }
-        return null
-    }
-
-    /**
-     * Checks if the bridge supervisor is alive on port 1236 using HTTP/1.1.
-     */
-    suspend fun checkHealth(): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val req = Request.Builder()
-                .url("$DEFAULT_BRIDGE_URL/api/health")
-                .get()
-                .build()
-            AgyOkHttpClient.bridgeClient.newCall(req).execute().use { resp ->
-                resp.isSuccessful
-            }
+    fun isPortOpen(port: Int, timeoutMs: Int = 800): Boolean {
+        return try {
+            val socket = Socket()
+            socket.connect(InetSocketAddress("127.0.0.1", port), timeoutMs)
+            socket.close()
+            true
         } catch (_: Exception) {
             false
         }
+    }
+
+    /**
+     * Resolves and extracts native ARM64 binaries (agy and agy_ide_bridge) into app files.
+     */
+    private fun ensureBinariesInstalled(): Pair<File?, File?> {
+        val binDir = File(context.filesDir, "bin").apply { mkdirs() }
+        val agyBin = File(binDir, "agy")
+        val bridgeBin = File(binDir, "agy_ide_bridge")
+
+        val agyCandidates = listOf(
+            File("/storage/emulated/0/.antigravity_bin/agy"),
+            File("/storage/emulated/0/Download/agy"),
+            File("/storage/emulated/0/CodeOnTheGoProjects/agy"),
+            File("/data/user/0/ai.antigem/files/home/.local/bin/agy"),
+            File("/data/data/com.termux/files/home/.local/bin/agy")
+        )
+
+        val bridgeCandidates = listOf(
+            File("/storage/emulated/0/.antigravity_bin/agy_ide_bridge"),
+            File("/storage/emulated/0/Download/agy_ide_bridge"),
+            File("/data/user/0/ai.antigem/files/usr/bin/agy_ide_bridge")
+        )
+
+        if (!agyBin.exists() || agyBin.length() == 0L) {
+            for (candidate in agyCandidates) {
+                if (candidate.exists() && candidate.length() > 0) {
+                    try {
+                        copyFile(candidate, agyBin)
+                        makeExecutable(agyBin)
+                        Log.i(TAG, "Copied agy binary from ${candidate.absolutePath}")
+                        break
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Could not copy ${candidate.absolutePath}: ${e.message}")
+                    }
+                }
+            }
+        } else {
+            makeExecutable(agyBin)
+        }
+
+        if (!bridgeBin.exists() || bridgeBin.length() == 0L) {
+            for (candidate in bridgeCandidates) {
+                if (candidate.exists() && candidate.length() > 0) {
+                    try {
+                        copyFile(candidate, bridgeBin)
+                        makeExecutable(bridgeBin)
+                        Log.i(TAG, "Copied bridge binary from ${candidate.absolutePath}")
+                        break
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Could not copy ${candidate.absolutePath}: ${e.message}")
+                    }
+                }
+            }
+        } else {
+            makeExecutable(bridgeBin)
+        }
+
+        return Pair(
+            if (agyBin.exists() && agyBin.canExecute()) agyBin else null,
+            if (bridgeBin.exists() && bridgeBin.canExecute()) bridgeBin else null
+        )
+    }
+
+    private fun copyFile(src: File, dst: File) {
+        FileInputStream(src).use { inStream ->
+            FileOutputStream(dst).use { outStream ->
+                inStream.copyTo(outStream)
+            }
+        }
+    }
+
+    private fun makeExecutable(file: File) {
+        file.setReadable(true, false)
+        file.setExecutable(true, false)
+        try {
+            Runtime.getRuntime().exec(arrayOf("chmod", "755", file.absolutePath)).waitFor()
+        } catch (_: Exception) {}
     }
 
     /**
@@ -93,67 +149,51 @@ class AgyDaemonManager(private val context: Context) {
             _daemonState.value = DaemonState.STARTING
             _statusMessage.value = "CONNECTING TO HUB"
 
-            if (checkHealth()) {
-                Log.d(TAG, "Bridge is active on port $DEFAULT_BRIDGE_PORT")
-                val csrf = AgyCsrfManager.instance.refreshFromBridge(DEFAULT_BRIDGE_URL)
-                _daemonState.value = DaemonState.RUNNING
-                _statusMessage.value = "CONNECTED · HUB :$DEFAULT_HUB_PORT"
-                return@launch
-            }
+            // 1. Check if ports are already listening
+            val hubOpen = isPortOpen(DEFAULT_HUB_PORT, 600)
+            val bridgeOpen = isPortOpen(DEFAULT_BRIDGE_PORT, 600)
 
-            // Ensure bin directory exists
-            val binDir = File(context.filesDir, "bin").apply { mkdirs() }
-            val bridgeBin = File(binDir, "agy_ide_bridge")
-
-            if (!bridgeBin.exists()) {
-                val sharedBridge = File("/data/user/0/ai.antigem/files/usr/bin/agy_ide_bridge")
-                if (sharedBridge.exists()) {
-                    try {
-                        sharedBridge.copyTo(bridgeBin, overwrite = true)
-                        bridgeBin.setExecutable(true)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Could not copy shared bridge: ${e.message}")
-                    }
+            if (hubOpen) {
+                Log.d(TAG, "Hub port $DEFAULT_HUB_PORT is open and listening")
+                if (bridgeOpen) {
+                    AgyCsrfManager.instance.refreshFromBridge(DEFAULT_BRIDGE_URL)
                 }
-            }
-
-            val agyPath = findAgyBinaryPath()
-            if (agyPath == null && !bridgeBin.exists()) {
-                _daemonState.value = DaemonState.ERROR
-                _statusMessage.value = "ANTIGRAVITY BINARY NOT FOUND"
+                _daemonState.value = DaemonState.RUNNING
+                _statusMessage.value = "ONLINE · HUB :$DEFAULT_HUB_PORT"
                 return@launch
             }
 
+            // 2. Prepare binaries
+            val (agyBin, bridgeBin) = ensureBinariesInstalled()
+
+            if (bridgeBin == null || agyBin == null) {
+                _daemonState.value = DaemonState.ERROR
+                _statusMessage.value = "DAEMON OFFLINE · TAP TO START"
+                return@launch
+            }
+
+            // 3. Spawn bridge daemon
             val token = AgyCsrfManager.instance.securityToken.ifBlank {
                 val gen = AgyCsrfManager.generateRandomToken()
                 AgyCsrfManager.instance.setSecurityToken(gen)
                 gen
             }
 
-            val cmd = mutableListOf<String>()
-            val execBin = if (bridgeBin.exists()) bridgeBin.absolutePath else "/data/user/0/ai.antigem/files/usr/bin/agy_ide_bridge"
-            cmd.add(execBin)
-            cmd.add("-f")
-            cmd.add("--token")
-            cmd.add(token)
-            cmd.add("-p")
-            cmd.add(DEFAULT_BRIDGE_PORT.toString())
-            cmd.add("--hub-port")
-            cmd.add(DEFAULT_HUB_PORT.toString())
-            cmd.add("-d")
-            cmd.add(workspaceDir)
-
-            agyPath?.let {
-                cmd.add("--bin")
-                cmd.add(it)
-            }
-
-            cmd.add("--no-claude")
-            cmd.add("--no-opencode")
-            cmd.add("--no-codex")
+            val cmd = listOf(
+                bridgeBin.absolutePath,
+                "-f",
+                "--token", token,
+                "-p", DEFAULT_BRIDGE_PORT.toString(),
+                "--hub-port", DEFAULT_HUB_PORT.toString(),
+                "-d", workspaceDir,
+                "--bin", agyBin.absolutePath,
+                "--no-claude",
+                "--no-opencode",
+                "--no-codex"
+            )
 
             try {
-                Log.d(TAG, "Starting bridge process: ${cmd.joinToString(" ")}")
+                Log.d(TAG, "Spawning daemon: ${cmd.joinToString(" ")}")
                 val pb = ProcessBuilder(cmd)
                 pb.directory(context.filesDir)
                 pb.environment()["HOME"] = File(context.filesDir, "home").apply { mkdirs() }.absolutePath
@@ -164,8 +204,8 @@ class AgyDaemonManager(private val context: Context) {
 
                 var online = false
                 for (i in 1..25) {
-                    delay(400)
-                    if (checkHealth()) {
+                    delay(500)
+                    if (isPortOpen(DEFAULT_HUB_PORT, 500)) {
                         online = true
                         break
                     }
@@ -177,11 +217,11 @@ class AgyDaemonManager(private val context: Context) {
                     _statusMessage.value = "ONLINE · HUB :$DEFAULT_HUB_PORT"
                 } else {
                     _daemonState.value = DaemonState.ERROR
-                    _statusMessage.value = "STARTUP TIMEOUT"
+                    _statusMessage.value = "STARTUP TIMED OUT"
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to start bridge daemon", e)
+                Log.e(TAG, "Bridge spawn failure", e)
                 _daemonState.value = DaemonState.ERROR
                 _statusMessage.value = "ERROR: ${e.localizedMessage}"
             }
