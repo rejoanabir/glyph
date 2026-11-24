@@ -32,7 +32,9 @@ data class AgentToolCall(
     val output: String? = null,
     val diffBefore: String? = null,
     val diffAfter: String? = null,
-    val filePath: String? = null
+    val filePath: String? = null,
+    val stepIndex: Int? = null,
+    val trajectoryId: String? = null
 )
 
 data class AgentMessage(
@@ -50,6 +52,7 @@ data class PendingToolApproval(
     val toolName: String,
     val actionSummary: String,
     val commandOrDiff: String,
+    val stepIndex: Int? = null,
     val onDecision: (approved: Boolean, rememberChoice: Boolean) -> Unit
 )
 
@@ -58,6 +61,7 @@ data class PendingUserQuestion(
     val questionText: String,
     val options: List<String>,
     val isMultiSelect: Boolean,
+    val stepIndex: Int? = null,
     val onAnswer: (List<String>) -> Unit
 )
 

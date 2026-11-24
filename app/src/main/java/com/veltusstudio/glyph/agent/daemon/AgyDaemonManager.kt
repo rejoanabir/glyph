@@ -3,15 +3,13 @@ package com.veltusstudio.glyph.agent.daemon
 import android.content.Context
 import android.util.Log
 import com.veltusstudio.glyph.agent.core.AgyCsrfManager
+import com.veltusstudio.glyph.agent.core.AgyOkHttpClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import org.json.JSONObject
+import okhttp3.Request
 import java.io.File
-import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 
 enum class DaemonState {
     STOPPED,
@@ -50,7 +48,7 @@ class AgyDaemonManager(private val context: Context) {
     private var bridgeProcess: Process? = null
 
     /**
-     * Finds the candidate path for the `agy` ARM64 binary.
+     * Checks if a candidate path for the `agy` ARM64 binary exists.
      */
     fun findAgyBinaryPath(): String? {
         val candidates = listOf(
@@ -71,18 +69,17 @@ class AgyDaemonManager(private val context: Context) {
     }
 
     /**
-     * Checks if a daemon is already alive on the local port.
+     * Checks if the bridge supervisor is alive on port 1236 using HTTP/1.1.
      */
     suspend fun checkHealth(): Boolean = withContext(Dispatchers.IO) {
         try {
-            val url = URL("$DEFAULT_BRIDGE_URL/api/health")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 1500
-            conn.readTimeout = 1500
-            conn.requestMethod = "GET"
-            val code = conn.responseCode
-            conn.disconnect()
-            code in 200..299
+            val req = Request.Builder()
+                .url("$DEFAULT_BRIDGE_URL/api/health")
+                .get()
+                .build()
+            AgyOkHttpClient.bridgeClient.newCall(req).execute().use { resp ->
+                resp.isSuccessful
+            }
         } catch (_: Exception) {
             false
         }
@@ -94,13 +91,13 @@ class AgyDaemonManager(private val context: Context) {
     fun startOrConnectDaemon(workspaceDir: String = context.filesDir.absolutePath) {
         scope.launch {
             _daemonState.value = DaemonState.STARTING
-            _statusMessage.value = "Checking daemon connection..."
+            _statusMessage.value = "CONNECTING TO HUB"
 
             if (checkHealth()) {
-                Log.d(TAG, "Local bridge is already active on port $DEFAULT_BRIDGE_PORT")
+                Log.d(TAG, "Bridge is active on port $DEFAULT_BRIDGE_PORT")
+                val csrf = AgyCsrfManager.instance.refreshFromBridge(DEFAULT_BRIDGE_URL)
                 _daemonState.value = DaemonState.RUNNING
-                _statusMessage.value = "Connected to Antigravity Hub"
-                syncTokenFromBridge()
+                _statusMessage.value = "CONNECTED · HUB :$DEFAULT_HUB_PORT"
                 return@launch
             }
 
@@ -108,7 +105,6 @@ class AgyDaemonManager(private val context: Context) {
             val binDir = File(context.filesDir, "bin").apply { mkdirs() }
             val bridgeBin = File(binDir, "agy_ide_bridge")
 
-            // If bridge binary not yet installed, check shared locations
             if (!bridgeBin.exists()) {
                 val sharedBridge = File("/data/user/0/ai.antigem/files/usr/bin/agy_ide_bridge")
                 if (sharedBridge.exists()) {
@@ -124,12 +120,15 @@ class AgyDaemonManager(private val context: Context) {
             val agyPath = findAgyBinaryPath()
             if (agyPath == null && !bridgeBin.exists()) {
                 _daemonState.value = DaemonState.ERROR
-                _statusMessage.value = "Antigravity binary (agy) not found. Please install it via Termux."
+                _statusMessage.value = "ANTIGRAVITY BINARY NOT FOUND"
                 return@launch
             }
 
-            val token = AgyCsrfManager.generateRandomToken()
-            AgyCsrfManager.instance.setToken(token)
+            val token = AgyCsrfManager.instance.securityToken.ifBlank {
+                val gen = AgyCsrfManager.generateRandomToken()
+                AgyCsrfManager.instance.setSecurityToken(gen)
+                gen
+            }
 
             val cmd = mutableListOf<String>()
             val execBin = if (bridgeBin.exists()) bridgeBin.absolutePath else "/data/user/0/ai.antigem/files/usr/bin/agy_ide_bridge"
@@ -154,7 +153,7 @@ class AgyDaemonManager(private val context: Context) {
             cmd.add("--no-codex")
 
             try {
-                Log.d(TAG, "Spawning bridge daemon: ${cmd.joinToString(" ")}")
+                Log.d(TAG, "Starting bridge process: ${cmd.joinToString(" ")}")
                 val pb = ProcessBuilder(cmd)
                 pb.directory(context.filesDir)
                 pb.environment()["HOME"] = File(context.filesDir, "home").apply { mkdirs() }.absolutePath
@@ -163,10 +162,9 @@ class AgyDaemonManager(private val context: Context) {
 
                 bridgeProcess = pb.start()
 
-                // Poll health for 10 seconds
                 var online = false
-                for (i in 1..20) {
-                    delay(500)
+                for (i in 1..25) {
+                    delay(400)
                     if (checkHealth()) {
                         online = true
                         break
@@ -174,38 +172,26 @@ class AgyDaemonManager(private val context: Context) {
                 }
 
                 if (online) {
+                    AgyCsrfManager.instance.refreshFromBridge(DEFAULT_BRIDGE_URL)
                     _daemonState.value = DaemonState.RUNNING
-                    _statusMessage.value = "Antigravity Engine Online (:1237)"
-                    Log.i(TAG, "Bridge and Antigravity Hub successfully started!")
+                    _statusMessage.value = "ONLINE · HUB :$DEFAULT_HUB_PORT"
                 } else {
                     _daemonState.value = DaemonState.ERROR
-                    _statusMessage.value = "Daemon startup timed out"
+                    _statusMessage.value = "STARTUP TIMEOUT"
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to start daemon", e)
+                Log.e(TAG, "Failed to start bridge daemon", e)
                 _daemonState.value = DaemonState.ERROR
-                _statusMessage.value = "Daemon error: ${e.localizedMessage}"
+                _statusMessage.value = "ERROR: ${e.localizedMessage}"
             }
         }
-    }
-
-    private suspend fun syncTokenFromBridge() = withContext(Dispatchers.IO) {
-        try {
-            val tokenFile = File("/data/user/0/ai.antigem/files/home/.antigem_bridge/csrf_token.txt")
-            if (tokenFile.exists()) {
-                val t = tokenFile.readText().trim()
-                if (t.isNotBlank()) {
-                    AgyCsrfManager.instance.setToken(t)
-                }
-            }
-        } catch (_: Exception) {}
     }
 
     fun stopDaemon() {
         bridgeProcess?.destroy()
         bridgeProcess = null
         _daemonState.value = DaemonState.STOPPED
-        _statusMessage.value = "Daemon stopped"
+        _statusMessage.value = "DAEMON STOPPED"
     }
 }

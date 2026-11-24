@@ -29,10 +29,10 @@ fun ToolApprovalBar(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0xFF334155), RoundedCornerShape(8.dp)),
+            .clip(RoundedCornerShape(6.dp))
+            .border(1.dp, Color(0xFFF59E0B), RoundedCornerShape(6.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF141720)
+            containerColor = Color(0xFF14120C)
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -40,13 +40,13 @@ fun ToolApprovalBar(
                 Icon(
                     imageVector = Icons.Default.Shield,
                     contentDescription = "Security",
-                    tint = Color(0xFF94A3B8),
+                    tint = Color(0xFFF59E0B),
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "EXECUTION PERMISSION REQUIRED",
-                    color = Color(0xFFF1F5F9),
+                    text = "ACTION REQUIRES AUTHORIZATION",
+                    color = Color(0xFFFBBF24),
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
                     letterSpacing = 0.08.sp,
@@ -56,23 +56,24 @@ fun ToolApprovalBar(
 
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Target operation:",
+                text = "${approval.actionSummary}:",
                 color = Color(0xFF94A3B8),
-                fontSize = 12.sp
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace
             )
 
             Spacer(modifier = Modifier.height(4.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF090A0E))
-                    .border(1.dp, Color(0xFF1E2330), RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF090805))
+                    .border(1.dp, Color(0xFF2E2413), RoundedCornerShape(4.dp))
                     .padding(8.dp)
             ) {
                 Text(
                     text = approval.commandOrDiff,
-                    color = Color(0xFFE2E8F0),
+                    color = Color(0xFFFDE68A),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp
                 )
@@ -89,14 +90,15 @@ fun ToolApprovalBar(
                         checked = rememberChoice,
                         onCheckedChange = { rememberChoice = it },
                         colors = CheckboxDefaults.colors(
-                            checkedColor = Color(0xFF6366F1),
-                            uncheckedColor = Color(0xFF475569)
+                            checkedColor = Color(0xFFF59E0B),
+                            uncheckedColor = Color(0xFF64748B)
                         )
                     )
                     Text(
                         text = "Remember for session",
-                        color = Color(0xFF64748B),
-                        fontSize = 11.sp
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
                     )
                 }
 
@@ -104,13 +106,18 @@ fun ToolApprovalBar(
                     OutlinedButton(
                         onClick = { approval.onDecision(false, rememberChoice) },
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color(0xFFF87171)
+                            contentColor = Color(0xFFF43F5E)
                         ),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x33F87171)),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x66F43F5E)),
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        Text(text = "Decline", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            text = "DENY",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
                     }
 
                     Spacer(modifier = Modifier.width(8.dp))
@@ -118,12 +125,18 @@ fun ToolApprovalBar(
                     Button(
                         onClick = { approval.onDecision(true, rememberChoice) },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF6366F1)
+                            containerColor = Color(0xFF10B981)
                         ),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        Text(text = "Allow", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                        Text(
+                            text = "AUTHORIZE",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF022C1C)
+                        )
                     }
                 }
             }

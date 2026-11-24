@@ -30,24 +30,24 @@ fun AskQuestionDialog(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0xFF3730A3), RoundedCornerShape(8.dp)),
+            .clip(RoundedCornerShape(6.dp))
+            .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF131326)
+            containerColor = Color(0xFF0C131A)
         )
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.HelpOutline,
-                    contentDescription = "Query",
-                    tint = Color(0xFFA5B4FC),
+                    contentDescription = "Question",
+                    tint = Color(0xFF38BDF8),
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "CLARIFICATION REQUIRED",
-                    color = Color(0xFFA5B4FC),
+                    color = Color(0xFF38BDF8),
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
                     letterSpacing = 0.08.sp,
@@ -73,12 +73,12 @@ fun AskQuestionDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 3.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (isSelected) Color(0xFF312E81) else Color(0xFF0D0D1A))
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (isSelected) Color(0xFF0E2938) else Color(0xFF070B0F))
                         .border(
                             1.dp,
-                            if (isSelected) Color(0xFF6366F1) else Color(0xFF1E1E38),
-                            RoundedCornerShape(6.dp)
+                            if (isSelected) Color(0xFF38BDF8) else Color(0xFF16202C),
+                            RoundedCornerShape(4.dp)
                         )
                         .clickable {
                             if (question.isMultiSelect) {
@@ -92,9 +92,9 @@ fun AskQuestionDialog(
                 ) {
                     Text(
                         text = option,
-                        color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                        color = if (isSelected) Color(0xFF38BDF8) else Color(0xFFCBD5E1),
                         fontSize = 12.sp,
-                        fontFamily = FontFamily.Default
+                        fontFamily = FontFamily.Monospace
                     )
                 }
             }
@@ -106,17 +106,18 @@ fun AskQuestionDialog(
                 enabled = selectedOptions.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF4F46E5),
-                    disabledContainerColor = Color(0xFF232338)
+                    containerColor = Color(0xFF38BDF8),
+                    disabledContainerColor = Color(0xFF16202C)
                 ),
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(4.dp),
                 contentPadding = PaddingValues(vertical = 10.dp)
             ) {
                 Text(
-                    text = "Submit Selection",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
+                    text = "SUBMIT CHOICE",
+                    color = Color(0xFF041824),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
                 )
             }
         }

@@ -34,11 +34,11 @@ fun ThoughtCard(
     var isExpanded by remember { mutableStateOf(isStreaming) }
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val alpha by infiniteTransition.animateFloat(
+    val dotAlpha by infiniteTransition.animateFloat(
         initialValue = 0.3f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = LinearEasing),
+            animation = tween(700, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "dotAlpha"
@@ -48,10 +48,10 @@ fun ThoughtCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0xFF1E2029), RoundedCornerShape(8.dp)),
+            .clip(RoundedCornerShape(6.dp))
+            .border(1.dp, Color(0xFF1E2330), RoundedCornerShape(6.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF101116)
+            containerColor = Color(0xFF0F1218)
         )
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
@@ -68,15 +68,15 @@ fun ThoughtCard(
                             .size(7.dp)
                             .clip(CircleShape)
                             .background(
-                                if (isStreaming) Color(0xFF818CF8).copy(alpha = alpha) else Color(0xFF475569)
+                                if (isStreaming) Color(0xFF38BDF8).copy(alpha = dotAlpha) else Color(0xFF64748B)
                             )
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isStreaming) "REASONING" else "ANALYSIS LOG",
-                        color = if (isStreaming) Color(0xFFA5B4FC) else Color(0xFF64748B),
+                        text = if (isStreaming) "REASONING [ STREAMING ]" else "REASONING LOG",
+                        color = if (isStreaming) Color(0xFF38BDF8) else Color(0xFF94A3B8),
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         letterSpacing = 0.08.sp,
                         fontFamily = FontFamily.Monospace
                     )
@@ -95,9 +95,9 @@ fun ThoughtCard(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xFF090A0D))
-                            .border(1.dp, Color(0xFF171922), RoundedCornerShape(6.dp))
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF07090D))
+                            .border(1.dp, Color(0xFF171A24), RoundedCornerShape(4.dp))
                             .padding(10.dp)
                     ) {
                         Text(

@@ -14,17 +14,17 @@ class AgentActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         @Suppress("DEPRECATION")
-        window.statusBarColor = Color(0xFF09090B).toArgb()
+        window.statusBarColor = Color(0xFF07080A).toArgb()
         @Suppress("DEPRECATION")
-        window.navigationBarColor = Color(0xFF09090B).toArgb()
+        window.navigationBarColor = Color(0xFF07080A).toArgb()
 
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
-                    background = Color(0xFF09090B),
-                    surface = Color(0xFF141417),
-                    primary = Color(0xFF6366F1),
-                    secondary = Color(0xFF38BDF8),
+                    background = Color(0xFF07080A),
+                    surface = Color(0xFF0F1218),
+                    primary = Color(0xFF38BDF8),
+                    secondary = Color(0xFF0284C7),
                     onBackground = Color(0xFFF8FAFC),
                     onSurface = Color(0xFFF8FAFC)
                 )
