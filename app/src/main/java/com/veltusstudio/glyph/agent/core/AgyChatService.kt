@@ -1,6 +1,8 @@
 package com.veltusstudio.glyph.agent.core
 
 import android.util.Log
+import com.veltusstudio.glyph.agent.daemon.AgyDaemonManager
+import com.veltusstudio.glyph.agent.daemon.DaemonState
 import com.veltusstudio.glyph.agent.model.AgentMessage
 import com.veltusstudio.glyph.agent.model.AgentStatus
 import com.veltusstudio.glyph.agent.model.AgentToolCall

@@ -27,8 +27,10 @@ import androidx.compose.ui.unit.sp
 import com.veltusstudio.glyph.R
 import com.veltusstudio.glyph.agent.core.AgyChatService
 import com.veltusstudio.glyph.agent.core.GlyphAuthManager
+import com.veltusstudio.glyph.agent.core.EngineMode
 import com.veltusstudio.glyph.agent.daemon.AgyDaemonManager
 import com.veltusstudio.glyph.agent.daemon.DaemonState
+import com.veltusstudio.glyph.agent.ui.dialogs.HubSetupDialog
 import com.veltusstudio.glyph.agent.ui.screens.*
 import com.veltusstudio.glyph.agent.ui.tabs.*
 import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
@@ -42,9 +44,6 @@ enum class AntigravityTab(val label: String) {
     DIFFS("DIFFS"),
     HUB("HUB")
 }
-
-import com.veltusstudio.glyph.agent.core.EngineMode
-import com.veltusstudio.glyph.agent.ui.dialogs.HubSetupDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
