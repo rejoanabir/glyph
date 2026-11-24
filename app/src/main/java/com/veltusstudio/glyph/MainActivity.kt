@@ -1144,12 +1144,13 @@ class MainActivity : Activity() {
 
         // Antigravity Agent Pill
         val agentBtn = TextView(this).apply {
-            text = "⚡ Agent"
-            setTextColor(Color.parseColor("#818CF8"))
-            textSize = 11.5f
+            text = "AGENT"
+            setTextColor(Color.parseColor("#A5B4FC"))
+            textSize = 10.5f
             typeface = Typeface.DEFAULT_BOLD
-            background = roundedBox(surfaceCard, Color.parseColor("#4D818CF8"), 50)
-            setPadding(dp(9), dp(5), dp(9), dp(5))
+            letterSpacing = 0.08f
+            background = roundedBox(surfaceCard, Color.parseColor("#4D6366F1"), 50)
+            setPadding(dp(10), dp(5), dp(10), dp(5))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -1517,17 +1518,7 @@ class MainActivity : Activity() {
     }
 
     private fun openAntigravityAgentScreen() {
-        val dialog = android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
-        val composeView = androidx.compose.ui.platform.ComposeView(this).apply {
-            setContent {
-                com.veltusstudio.glyph.agent.ui.AntigravityAgentScreen(
-                    workspaceDir = filesDir.absolutePath,
-                    onClose = { dialog.dismiss() }
-                )
-            }
-        }
-        dialog.setContentView(composeView)
-        dialog.show()
+        startActivity(Intent(this, com.veltusstudio.glyph.agent.ui.AgentActivity::class.java))
     }
 
     private fun openSettingsDialog() {

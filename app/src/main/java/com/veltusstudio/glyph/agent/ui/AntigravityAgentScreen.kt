@@ -10,7 +10,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -50,12 +52,10 @@ fun AntigravityAgentScreen(
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    // Auto-connect daemon on mount
     LaunchedEffect(Unit) {
         daemonManager.startOrConnectDaemon(workspaceDir)
     }
 
-    // Auto-scroll to bottom on new messages
     LaunchedEffect(messages.size, liveThinking) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -64,60 +64,65 @@ fun AntigravityAgentScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = Color(0xFF09090B),
+        containerColor = Color(0xFF08080A),
         topBar = {
             TopAppBar(
                 title = {
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "Antigravity",
+                                text = "ANTIGRAVITY",
                                 color = Color(0xFFF8FAFC),
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.1.sp,
+                                fontFamily = FontFamily.Monospace
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            // Status Dot
                             val dotColor = when (daemonState) {
                                 DaemonState.RUNNING -> Color(0xFF10B981)
                                 DaemonState.STARTING -> Color(0xFFF59E0B)
                                 DaemonState.ERROR -> Color(0xFFEF4444)
-                                DaemonState.STOPPED -> Color(0xFF6B7280)
+                                DaemonState.STOPPED -> Color(0xFF64748B)
                             }
                             Box(
                                 modifier = Modifier
-                                    .size(8.dp)
+                                    .size(6.dp)
                                     .clip(CircleShape)
                                     .background(dotColor)
                             )
                         }
                         Text(
-                            text = if (daemonState == DaemonState.RUNNING) "Gemini 3.8 Flash • Hub :1237" else statusMsg,
-                            color = Color(0xFF9CA3AF),
-                            fontSize = 11.sp
+                            text = if (daemonState == DaemonState.RUNNING) "ONLINE · HUB :1237 · GEMINI 3.8 FLASH" else statusMsg.uppercase(),
+                            color = Color(0xFF64748B),
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 0.05.sp
                         )
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color(0xFFF8FAFC)
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 },
                 actions = {
                     IconButton(onClick = { chatService.newSession() }) {
                         Icon(
-                            imageVector = Icons.Default.Refresh,
+                            imageVector = Icons.Default.Add,
                             contentDescription = "New Session",
-                            tint = Color(0xFF9CA3AF)
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF09090B)
+                    containerColor = Color(0xFF08080A)
                 )
             )
         },
@@ -125,10 +130,10 @@ fun AntigravityAgentScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF09090B))
-                    .padding(8.dp)
+                    .background(Color(0xFF08080A))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                // Approval Bar if tool needs user permission
+                // Approval Bar
                 AnimatedVisibility(visible = pendingApproval != null) {
                     pendingApproval?.let { approval ->
                         ToolApprovalBar(approval = approval)
@@ -142,61 +147,63 @@ fun AntigravityAgentScreen(
                     }
                 }
 
-                // Input Row
-                Row(
+                // Input Bar
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF111217))
+                        .border(1.dp, Color(0xFF1E2029), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
                 ) {
-                    TextField(
-                        value = inputText,
-                        onValueChange = { inputText = it },
-                        placeholder = {
-                            Text(
-                                text = "Ask Antigravity to edit, build, or test...",
-                                color = Color(0xFF6B7280),
-                                fontSize = 13.sp
-                            )
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(24.dp))
-                            .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(24.dp)),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color(0xFF141417),
-                            unfocusedContainerColor = Color(0xFF141417),
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedTextColor = Color(0xFFF8FAFC),
-                            unfocusedTextColor = Color(0xFFF8FAFC)
-                        ),
-                        singleLine = false,
-                        maxLines = 4
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    IconButton(
-                        onClick = {
-                            if (inputText.isNotBlank()) {
-                                val text = inputText
-                                inputText = ""
-                                chatService.sendPrompt(text, workspaceDir)
-                            }
-                        },
-                        enabled = inputText.isNotBlank() && agentStatus != AgentStatus.THINKING,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(if (inputText.isNotBlank()) Color(0xFF818CF8) else Color(0x33818CF8))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = "Send",
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
+                        TextField(
+                            value = inputText,
+                            onValueChange = { inputText = it },
+                            placeholder = {
+                                Text(
+                                    text = "Assign task, shell instruction, or question...",
+                                    color = Color(0xFF475569),
+                                    fontSize = 13.sp
+                                )
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedTextColor = Color(0xFFF8FAFC),
+                                unfocusedTextColor = Color(0xFFF8FAFC)
+                            ),
+                            singleLine = false,
+                            maxLines = 4
                         )
+
+                        IconButton(
+                            onClick = {
+                                if (inputText.isNotBlank()) {
+                                    val text = inputText
+                                    inputText = ""
+                                    chatService.sendPrompt(text, workspaceDir)
+                                }
+                            },
+                            enabled = inputText.isNotBlank() && agentStatus != AgentStatus.THINKING,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (inputText.isNotBlank()) Color(0xFF6366F1) else Color(0xFF1E2029))
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                tint = if (inputText.isNotBlank()) Color.White else Color(0xFF475569),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -210,10 +217,9 @@ fun AntigravityAgentScreen(
                 .padding(horizontal = 12.dp)
         ) {
             items(messages, key = { it.id }) { message ->
-                MessageBubble(message = message)
+                MessageItem(message = message)
             }
 
-            // Live streaming thought card if currently thinking
             if (agentStatus == AgentStatus.THINKING && !liveThinking.isNullOrBlank()) {
                 item {
                     ThoughtCard(thoughtText = liveThinking ?: "", isStreaming = true)
@@ -224,59 +230,56 @@ fun AntigravityAgentScreen(
 }
 
 @Composable
-fun MessageBubble(message: AgentMessage) {
+fun MessageItem(message: AgentMessage) {
     val isUser = message.role == Role.USER
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp),
+            .padding(vertical = 4.dp),
         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
     ) {
-        // Render Thought Card if present in assistant message
         if (!isUser && !message.thinking.isNullOrBlank()) {
             ThoughtCard(thoughtText = message.thinking, isStreaming = false)
         }
 
-        // Render Tool Calls if present in assistant message
         if (!isUser && message.toolCalls.isNotEmpty()) {
             message.toolCalls.forEach { toolCall ->
                 ToolCallCard(toolCall = toolCall)
             }
         }
 
-        // Main Message Content
         if (message.text.isNotBlank()) {
-            Surface(
-                modifier = Modifier
-                    .widthIn(max = 320.dp)
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = 16.dp,
-                            topEnd = 16.dp,
-                            bottomStart = if (isUser) 16.dp else 4.dp,
-                            bottomEnd = if (isUser) 4.dp else 16.dp
-                        )
+            if (isUser) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF1E2029),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E3344)),
+                    modifier = Modifier.widthIn(max = 300.dp)
+                ) {
+                    Text(
+                        text = message.text,
+                        color = Color(0xFFF8FAFC),
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                     )
-                    .border(
-                        1.dp,
-                        if (isUser) Color.Transparent else Color(0x26FFFFFF),
-                        RoundedCornerShape(
-                            topStart = 16.dp,
-                            topEnd = 16.dp,
-                            bottomStart = if (isUser) 16.dp else 4.dp,
-                            bottomEnd = if (isUser) 4.dp else 16.dp
-                        )
-                    ),
-                color = if (isUser) Color(0xFF2E2E38) else Color(0xCC141417)
-            ) {
-                Text(
-                    text = message.text,
-                    color = Color(0xFFF8FAFC),
-                    fontSize = 13.sp,
-                    lineHeight = 20.sp,
-                    modifier = Modifier.padding(12.dp)
-                )
+                }
+            } else {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF101116),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1A1C24)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = message.text,
+                        color = Color(0xFFF1F5F9),
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
             }
         }
     }

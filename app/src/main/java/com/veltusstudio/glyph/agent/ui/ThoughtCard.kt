@@ -6,19 +6,22 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material3.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -28,30 +31,30 @@ fun ThoughtCard(
     modifier: Modifier = Modifier,
     isStreaming: Boolean = false
 ) {
-    var isExpanded by remember { mutableStateOf(true) }
+    var isExpanded by remember { mutableStateOf(isStreaming) }
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
+        initialValue = 0.3f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
+            animation = tween(800, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "alpha"
+        label = "dotAlpha"
     )
 
     Card(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(12.dp)),
+            .clip(RoundedCornerShape(8.dp))
+            .border(1.dp, Color(0xFF1E2029), RoundedCornerShape(8.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xCC141417)
+            containerColor = Color(0xFF101116)
         )
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(10.dp)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -60,45 +63,51 @@ fun ThoughtCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Psychology,
-                        contentDescription = "Reasoning",
-                        tint = if (isStreaming) Color(0xFF818CF8).copy(alpha = alpha) else Color(0xFF9CA3AF),
-                        modifier = Modifier.size(20.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isStreaming) Color(0xFF818CF8).copy(alpha = alpha) else Color(0xFF475569)
+                            )
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isStreaming) "Thinking..." else "Reasoning Process",
-                        color = Color(0xFFF8FAFC),
-                        fontSize = 13.sp
+                        text = if (isStreaming) "REASONING" else "ANALYSIS LOG",
+                        color = if (isStreaming) Color(0xFFA5B4FC) else Color(0xFF64748B),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.08.sp,
+                        fontFamily = FontFamily.Monospace
                     )
                 }
 
-                IconButton(
-                    onClick = { isExpanded = !isExpanded },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Toggle",
-                        tint = Color(0xFF9CA3AF),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Toggle",
+                    tint = Color(0xFF64748B),
+                    modifier = Modifier.size(16.dp)
+                )
             }
 
             AnimatedVisibility(visible = isExpanded) {
                 Column(modifier = Modifier.padding(top = 8.dp)) {
-                    Divider(color = Color(0x1AFFFFFF), thickness = 1.dp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = thoughtText,
-                        color = Color(0xFF9CA3AF),
-                        fontSize = 12.sp,
-                        fontStyle = FontStyle.Italic,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 18.sp
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF090A0D))
+                            .border(1.dp, Color(0xFF171922), RoundedCornerShape(6.dp))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = thoughtText,
+                            color = Color(0xFF94A3B8),
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 18.sp
+                        )
+                    }
                 }
             }
         }
