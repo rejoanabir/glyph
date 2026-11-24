@@ -1,8 +1,10 @@
 package com.veltusstudio.glyph.agent.ui
 
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -16,14 +18,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.veltusstudio.glyph.R
 import com.veltusstudio.glyph.agent.core.AgyChatService
 import com.veltusstudio.glyph.agent.daemon.AgyDaemonManager
 import com.veltusstudio.glyph.agent.daemon.DaemonState
+import com.veltusstudio.glyph.agent.ui.screens.*
 import com.veltusstudio.glyph.agent.ui.tabs.*
+import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -44,12 +50,14 @@ fun AntigravityMainWorkspace(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val colors = LocalGlyphColors.current
 
     val daemonManager = remember { AgyDaemonManager.getInstance(context) }
     val chatService = remember { AgyChatService.instance }
     val daemonState by daemonManager.daemonState.collectAsState()
     val statusMsg by daemonManager.statusMessage.collectAsState()
 
+    var activeScreen by remember { mutableStateOf("ide") }
     var activeTab by remember { mutableStateOf(AntigravityTab.WORKBENCH) }
 
     // Resolve default workspace directory
@@ -64,15 +72,24 @@ fun AntigravityMainWorkspace(
         mutableStateOf(initialWorkspace ?: defaultDir)
     }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val dotAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1f,
+    val infiniteTransition = rememberInfiniteTransition(label = "radarPulse")
+    val radarPulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 2.4f,
         animationSpec = infiniteRepeatable(
-            animation = tween(650, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
         ),
-        label = "dotAlpha"
+        label = "radarPulseScale"
+    )
+    val radarPulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.8f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "radarPulseAlpha"
     )
 
     // Automatically ensure daemon is alive
@@ -80,232 +97,274 @@ fun AntigravityMainWorkspace(
         daemonManager.startOrConnectDaemon(currentWorkspace)
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            WorkspaceDrawer(
-                currentWorkspace = currentWorkspace,
-                onSelectWorkspace = { newPath ->
-                    currentWorkspace = newPath
-                    daemonManager.startOrConnectDaemon(newPath)
-                },
-                onNewSession = {
-                    chatService.newSession()
-                    activeTab = AntigravityTab.WORKBENCH
-                },
-                daemonManager = daemonManager,
-                onCloseDrawer = { coroutineScope.launch { drawerState.close() } }
-            )
-        }
-    ) {
-        Scaffold(
-            modifier = modifier.fillMaxSize(),
-            containerColor = Color(0xFF07080A),
-            topBar = {
-                Surface(
-                    color = Color(0xFF090B10),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF161A24)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    TopAppBar(
-                        title = {
-                            Column(
-                                modifier = Modifier.clickable {
-                                    if (daemonState != DaemonState.RUNNING) {
-                                        daemonManager.startOrConnectDaemon(currentWorkspace)
-                                    }
-                                }
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "ANTIGRAVITY // IDE",
-                                        color = Color(0xFFF8FAFC),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.08.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    val dotColor = when (daemonState) {
-                                        DaemonState.RUNNING -> Color(0xFF10B981)
-                                        DaemonState.STARTING -> Color(0xFFF59E0B)
-                                        DaemonState.ERROR -> Color(0xFFEF4444)
-                                        DaemonState.STOPPED -> Color(0xFF64748B)
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(7.dp)
-                                            .clip(CircleShape)
-                                            .background(dotColor.copy(alpha = if (daemonState == DaemonState.RUNNING) dotAlpha else 1f))
-                                    )
-                                }
-
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = if (daemonState == DaemonState.RUNNING) "ONLINE · HUB :1237" else statusMsg.uppercase(),
-                                        color = if (daemonState == DaemonState.RUNNING) Color(0xFF64748B) else Color(0xFFF59E0B),
-                                        fontSize = 8.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    // Project pill
-                                    Surface(
-                                        shape = RoundedCornerShape(3.dp),
-                                        color = Color(0xFF131A26),
-                                        modifier = Modifier.clickable {
-                                            coroutineScope.launch { drawerState.open() }
-                                        }
-                                    ) {
-                                        Text(
-                                            text = File(currentWorkspace).name.ifBlank { "ROOT" }.uppercase(),
-                                            color = Color(0xFF38BDF8),
-                                            fontSize = 8.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            fontFamily = FontFamily.Monospace,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                        )
-                                    }
-                                }
-                            }
+    // Outer Screen Router
+    when (activeScreen) {
+        "boot" -> BootScreen(onBootComplete = { activeScreen = "ide" })
+        "onboard" -> OnboardingScreen(onDone = { activeScreen = "ide" })
+        "auth" -> AuthScreen(onProceed = { activeScreen = "perms" })
+        "perms" -> PermissionsScreen(onProceed = { activeScreen = "daemon" })
+        "daemon" -> EngineSetupScreen(onComplete = { activeScreen = "ide" })
+        else -> {
+            // Main IDE Shell
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                drawerContent = {
+                    WorkspaceDrawer(
+                        currentWorkspace = currentWorkspace,
+                        onSelectWorkspace = { newPath ->
+                            currentWorkspace = newPath
+                            daemonManager.startOrConnectDaemon(newPath)
                         },
-                        navigationIcon = {
-                            IconButton(
-                                onClick = { coroutineScope.launch { drawerState.open() } },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Menu,
-                                    contentDescription = "Menu",
-                                    tint = Color(0xFF94A3B8),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
+                        onNewSession = {
+                            chatService.newSession()
+                            activeTab = AntigravityTab.WORKBENCH
                         },
-                        actions = {
-                            IconButton(
-                                onClick = {
-                                    chatService.newSession()
-                                    activeTab = AntigravityTab.WORKBENCH
-                                },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "New Session",
-                                    tint = Color(0xFF94A3B8),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-
-                            IconButton(
-                                onClick = { daemonManager.startOrConnectDaemon(currentWorkspace) },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Reconnect",
-                                    tint = Color(0xFF94A3B8),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
+                        onNavigateScreen = { targetScreen ->
+                            activeScreen = targetScreen
                         },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent
-                        )
+                        daemonManager = daemonManager,
+                        onCloseDrawer = { coroutineScope.launch { drawerState.close() } }
                     )
                 }
-            },
-            bottomBar = {
-                Surface(
-                    color = Color(0xFF090B10),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF161A24)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    NavigationBar(
-                        containerColor = Color.Transparent,
-                        tonalElevation = 0.dp,
-                        modifier = Modifier.height(56.dp)
-                    ) {
-                        AntigravityTab.values().forEach { tab ->
-                            val isSelected = activeTab == tab
-                            NavigationBarItem(
-                                selected = isSelected,
-                                onClick = { activeTab = tab },
-                                icon = {
-                                    val icon = when (tab) {
-                                        AntigravityTab.WORKBENCH -> Icons.Default.SmartToy
-                                        AntigravityTab.EXPLORER -> Icons.Default.Folder
-                                        AntigravityTab.TERMINAL -> Icons.Default.Code
-                                        AntigravityTab.DIFFS -> Icons.Default.Difference
-                                        AntigravityTab.HUB -> Icons.Default.Tune
+            ) {
+                Scaffold(
+                    modifier = modifier.fillMaxSize(),
+                    containerColor = colors.bgObsidian,
+                    topBar = {
+                        Surface(
+                            color = colors.surfaceGlass,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            TopAppBar(
+                                title = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.clickable {
+                                            if (daemonState != DaemonState.RUNNING) {
+                                                daemonManager.startOrConnectDaemon(currentWorkspace)
+                                            }
+                                        }
+                                    ) {
+                                        // Original Brushed Silver Glyph Logo
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = colors.surfaceCard,
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderActive),
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Image(
+                                                painter = painterResource(id = R.drawable.glyph_logo),
+                                                contentDescription = "Glyph Logo",
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .padding(2.dp)
+                                                    .clip(RoundedCornerShape(3.dp))
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        Text(
+                                            text = "GLYPH // IDE",
+                                            color = colors.textPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 0.08.sp,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        // Glowing Radar Indicator
+                                        val dotColor = when (daemonState) {
+                                            DaemonState.RUNNING -> colors.statusEmerald
+                                            DaemonState.STARTING -> colors.statusAmber
+                                            else -> colors.statusCrimson
+                                        }
+
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier.size(14.dp)
+                                        ) {
+                                            if (daemonState == DaemonState.RUNNING) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size((6 * radarPulseScale).dp)
+                                                        .clip(CircleShape)
+                                                        .background(dotColor.copy(alpha = radarPulseAlpha))
+                                                )
+                                            }
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .clip(CircleShape)
+                                                    .background(dotColor)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(6.dp))
+
+                                        // Active Project Pill
+                                        Surface(
+                                            shape = RoundedCornerShape(3.dp),
+                                            color = colors.surfaceElevated,
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderActive),
+                                            modifier = Modifier.clickable {
+                                                coroutineScope.launch { drawerState.open() }
+                                            }
+                                        ) {
+                                            Text(
+                                                text = "[ ${File(currentWorkspace).name.ifBlank { "GLYPH" }.uppercase()} ]",
+                                                color = colors.accentPrimary,
+                                                fontSize = 8.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                            )
+                                        }
                                     }
-                                    Icon(
-                                        imageVector = icon,
-                                        contentDescription = tab.label,
-                                        modifier = Modifier.size(18.dp)
-                                    )
                                 },
-                                label = {
-                                    Text(
-                                        text = tab.label,
-                                        fontSize = 8.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
+                                navigationIcon = {
+                                    IconButton(
+                                        onClick = { coroutineScope.launch { drawerState.open() } },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Menu,
+                                            contentDescription = "Menu",
+                                            tint = colors.textSecondary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = Color(0xFF38BDF8),
-                                    selectedTextColor = Color(0xFF38BDF8),
-                                    unselectedIconColor = Color(0xFF64748B),
-                                    unselectedTextColor = Color(0xFF64748B),
-                                    indicatorColor = Color(0x1F38BDF8)
+                                actions = {
+                                    IconButton(
+                                        onClick = {
+                                            chatService.newSession()
+                                            activeTab = AntigravityTab.WORKBENCH
+                                        },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "New Session",
+                                            tint = colors.textSecondary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { daemonManager.startOrConnectDaemon(currentWorkspace) },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = "Reconnect",
+                                            tint = colors.textSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                },
+                                colors = TopAppBarDefaults.topAppBarColors(
+                                    containerColor = Color.Transparent
                                 )
                             )
                         }
-                    }
-                }
-            }
-        ) { paddingValues ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                Crossfade(targetState = activeTab, label = "tabCrossfade") { tab ->
-                    when (tab) {
-                        AntigravityTab.WORKBENCH -> WorkbenchTab(
-                            workspaceDir = currentWorkspace,
-                            chatService = chatService,
-                            daemonManager = daemonManager
-                        )
-                        AntigravityTab.EXPLORER -> ExplorerTab(
-                            workspaceDir = currentWorkspace,
-                            onSendFileToAgent = { file ->
-                                activeTab = AntigravityTab.WORKBENCH
-                                try {
-                                    val content = file.readText().take(4000)
-                                    chatService.sendPrompt(
-                                        "Examine and review file: ${file.name}\n```\n$content\n```",
-                                        currentWorkspace
-                                    )
-                                } catch (e: Exception) {
-                                    chatService.sendPrompt(
-                                        "Examine file at path: ${file.absolutePath}",
-                                        currentWorkspace
+                    },
+                    bottomBar = {
+                        Surface(
+                            color = colors.surfaceGlass,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            NavigationBar(
+                                containerColor = Color.Transparent,
+                                tonalElevation = 0.dp,
+                                modifier = Modifier.height(56.dp)
+                            ) {
+                                AntigravityTab.values().forEach { tab ->
+                                    val isSelected = activeTab == tab
+                                    NavigationBarItem(
+                                        selected = isSelected,
+                                        onClick = { activeTab = tab },
+                                        icon = {
+                                            val icon = when (tab) {
+                                                AntigravityTab.WORKBENCH -> Icons.Default.SmartToy
+                                                AntigravityTab.EXPLORER -> Icons.Default.Folder
+                                                AntigravityTab.TERMINAL -> Icons.Default.Code
+                                                AntigravityTab.DIFFS -> Icons.Default.Difference
+                                                AntigravityTab.HUB -> Icons.Default.Tune
+                                            }
+                                            Icon(
+                                                imageVector = icon,
+                                                contentDescription = tab.label,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        },
+                                        label = {
+                                            Text(
+                                                text = tab.label,
+                                                fontSize = 8.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        colors = NavigationBarItemDefaults.colors(
+                                            selectedIconColor = colors.accentPrimary,
+                                            selectedTextColor = colors.accentPrimary,
+                                            unselectedIconColor = colors.textMuted,
+                                            unselectedTextColor = colors.textMuted,
+                                            indicatorColor = colors.accentGlow
+                                        )
                                     )
                                 }
                             }
-                        )
-                        AntigravityTab.TERMINAL -> TerminalTab(
-                            workspaceDir = currentWorkspace
-                        )
-                        AntigravityTab.DIFFS -> DiffsTab(
-                            workspaceDir = currentWorkspace
-                        )
-                        AntigravityTab.HUB -> HubTab(
-                            daemonManager = daemonManager,
-                            workspaceDir = currentWorkspace
-                        )
+                        }
+                    }
+                ) { paddingValues ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(paddingValues)
+                    ) {
+                        Crossfade(targetState = activeTab, label = "tabCrossfade") { tab ->
+                            when (tab) {
+                                AntigravityTab.WORKBENCH -> WorkbenchTab(
+                                    workspaceDir = currentWorkspace,
+                                    chatService = chatService,
+                                    daemonManager = daemonManager
+                                )
+                                AntigravityTab.EXPLORER -> ExplorerTab(
+                                    workspaceDir = currentWorkspace,
+                                    onSendFileToAgent = { file ->
+                                        activeTab = AntigravityTab.WORKBENCH
+                                        try {
+                                            val content = file.readText().take(4000)
+                                            chatService.sendPrompt(
+                                                "Examine and review file: ${file.name}\n```\n$content\n```",
+                                                currentWorkspace
+                                            )
+                                        } catch (e: Exception) {
+                                            chatService.sendPrompt(
+                                                "Examine file at path: ${file.absolutePath}",
+                                                currentWorkspace
+                                            )
+                                        }
+                                    }
+                                )
+                                AntigravityTab.TERMINAL -> TerminalTab(
+                                    workspaceDir = currentWorkspace
+                                )
+                                AntigravityTab.DIFFS -> DiffsTab(
+                                    workspaceDir = currentWorkspace
+                                )
+                                AntigravityTab.HUB -> HubTab(
+                                    daemonManager = daemonManager,
+                                    workspaceDir = currentWorkspace
+                                )
+                            }
+                        }
                     }
                 }
             }

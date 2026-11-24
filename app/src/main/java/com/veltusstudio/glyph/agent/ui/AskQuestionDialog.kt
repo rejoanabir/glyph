@@ -18,22 +18,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.veltusstudio.glyph.agent.model.PendingUserQuestion
+import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
 
 @Composable
 fun AskQuestionDialog(
     question: PendingUserQuestion,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalGlyphColors.current
     val selectedOptions = remember { mutableStateListOf<String>() }
 
     Card(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(6.dp)),
+            .clip(RoundedCornerShape(5.dp))
+            .border(1.dp, colors.accentPrimary, RoundedCornerShape(5.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF0C131A)
+            containerColor = colors.surfaceElevated
         )
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -41,15 +43,15 @@ fun AskQuestionDialog(
                 Icon(
                     imageVector = Icons.Default.HelpOutline,
                     contentDescription = "Question",
-                    tint = Color(0xFF38BDF8),
+                    tint = colors.accentPrimary,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "CLARIFICATION REQUIRED",
-                    color = Color(0xFF38BDF8),
+                    color = colors.accentPrimary,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
+                    fontSize = 10.5.sp,
                     letterSpacing = 0.08.sp,
                     fontFamily = FontFamily.Monospace
                 )
@@ -58,10 +60,10 @@ fun AskQuestionDialog(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = question.questionText,
-                color = Color(0xFFF1F5F9),
-                fontSize = 13.sp,
+                color = colors.textPrimary,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Normal,
-                lineHeight = 18.sp
+                lineHeight = 17.sp
             )
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -74,10 +76,10 @@ fun AskQuestionDialog(
                         .fillMaxWidth()
                         .padding(vertical = 3.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(if (isSelected) Color(0xFF0E2938) else Color(0xFF070B0F))
+                        .background(if (isSelected) colors.accentGlow else colors.surfaceTerminal)
                         .border(
                             1.dp,
-                            if (isSelected) Color(0xFF38BDF8) else Color(0xFF16202C),
+                            if (isSelected) colors.accentPrimary else colors.borderSubtle,
                             RoundedCornerShape(4.dp)
                         )
                         .clickable {
@@ -92,8 +94,8 @@ fun AskQuestionDialog(
                 ) {
                     Text(
                         text = option,
-                        color = if (isSelected) Color(0xFF38BDF8) else Color(0xFFCBD5E1),
-                        fontSize = 12.sp,
+                        color = if (isSelected) colors.accentPrimary else colors.textSecondary,
+                        fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
                 }
@@ -106,16 +108,16 @@ fun AskQuestionDialog(
                 enabled = selectedOptions.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF38BDF8),
-                    disabledContainerColor = Color(0xFF16202C)
+                    containerColor = colors.accentPrimary,
+                    disabledContainerColor = colors.borderSubtle
                 ),
                 shape = RoundedCornerShape(4.dp),
                 contentPadding = PaddingValues(vertical = 10.dp)
             ) {
                 Text(
                     text = "SUBMIT CHOICE",
-                    color = Color(0xFF041824),
-                    fontSize = 11.sp,
+                    color = colors.accentOnPrimary,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
                 )

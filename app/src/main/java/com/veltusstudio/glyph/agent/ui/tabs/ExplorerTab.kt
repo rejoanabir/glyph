@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
 import java.io.File
 
 @Composable
@@ -40,6 +41,7 @@ fun ExplorerTab(
     onSendFileToAgent: (File) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalGlyphColors.current
     var currentDir by remember { mutableStateOf(File(workspaceDir)) }
     var selectedFile by remember { mutableStateOf<File?>(null) }
     var searchQuery by remember { mutableStateOf("") }
@@ -59,12 +61,12 @@ fun ExplorerTab(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF07080A))
+            .background(colors.bgObsidian)
     ) {
         // Top breadcrumb bar
         Surface(
-            color = Color(0xFF0C0E14),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF191D28)),
+            color = colors.surfaceGlass,
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -84,7 +86,7 @@ fun ExplorerTab(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Up",
-                            tint = Color(0xFF94A3B8),
+                            tint = colors.textSecondary,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -93,7 +95,7 @@ fun ExplorerTab(
 
                 Text(
                     text = currentDir.absolutePath.replace(workspaceDir, "").ifBlank { "/" },
-                    color = Color(0xFF38BDF8),
+                    color = colors.accentPrimary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
@@ -102,7 +104,7 @@ fun ExplorerTab(
 
                 Text(
                     text = "${files.size} ITEMS",
-                    color = Color(0xFF64748B),
+                    color = colors.textMuted,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
@@ -112,7 +114,8 @@ fun ExplorerTab(
 
         // Search Filter
         Surface(
-            color = Color(0xFF090A0F),
+            color = colors.surfaceCard,
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             TextField(
@@ -120,8 +123,8 @@ fun ExplorerTab(
                 onValueChange = { searchQuery = it },
                 placeholder = {
                     Text(
-                        text = "Filter files in current directory...",
-                        color = Color(0xFF475569),
+                        text = "Filter files & directories...",
+                        color = colors.textMuted,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
@@ -130,101 +133,95 @@ fun ExplorerTab(
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search",
-                        tint = Color(0xFF64748B),
-                        modifier = Modifier.size(14.dp)
+                        tint = colors.textMuted,
+                        modifier = Modifier.size(16.dp)
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
-                textStyle = LocalTextStyle.current.copy(
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace
-                ),
+                singleLine = true,
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
-                    focusedTextColor = Color(0xFFF8FAFC),
-                    unfocusedTextColor = Color(0xFFF8FAFC)
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary
                 ),
-                singleLine = true
+                textStyle = LocalTextStyle.current.copy(
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
             )
         }
 
-        // Main content: either Code Viewer or File List
-        if (selectedFile != null && selectedFile!!.isFile) {
-            CodeViewer(
-                file = selectedFile!!,
-                onBack = { selectedFile = null },
-                onCopy = {
-                    try {
-                        val text = selectedFile!!.readText()
-                        clipboardManager.setText(AnnotatedString(text))
-                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                    } catch (_: Exception) {}
-                },
-                onSendToAgent = {
-                    onSendFileToAgent(selectedFile!!)
-                }
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 8.dp)
-            ) {
-                items(files, key = { it.absolutePath }) { file ->
-                    val isDir = file.isDirectory
-                    val icon = if (isDir) {
-                        Icons.Default.Folder
-                    } else if (file.extension in listOf("kt", "java", "cpp", "h", "py", "sh", "json", "xml")) {
-                        Icons.Default.Code
-                    } else {
-                        Icons.Default.Description
-                    }
+        // Main content: either file list or code viewer
+        Box(modifier = Modifier.weight(1f)) {
+            selectedFile?.let { file ->
+                CodeViewer(
+                    file = file,
+                    onBack = { selectedFile = null },
+                    onCopy = {
+                        try {
+                            clipboardManager.setText(AnnotatedString(file.readText()))
+                            Toast.makeText(context, "File copied to clipboard", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onSendToAgent = { onSendFileToAgent(file) }
+                )
+            } ?: run {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(files, key = { it.absolutePath }) { file ->
+                        val isDir = file.isDirectory
+                        val icon = when {
+                            isDir -> Icons.Default.Folder
+                            file.extension.lowercase() in listOf("kt", "java", "py", "rs", "cpp", "c", "js", "ts", "json", "xml", "gradle") -> Icons.Default.Code
+                            else -> Icons.Default.Description
+                        }
 
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFF0C0E14),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF161A24)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp)
-                            .clickable {
-                                if (isDir) {
-                                    currentDir = file
-                                    searchQuery = ""
-                                } else {
-                                    selectedFile = file
+                        Surface(
+                            color = Color.Transparent,
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, colors.borderSubtle),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (isDir) {
+                                        currentDir = file
+                                    } else {
+                                        selectedFile = file
+                                    }
                                 }
-                            }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = if (isDir) "Dir" else "File",
-                                tint = if (isDir) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = file.name,
-                                    color = Color(0xFFF8FAFC),
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = if (isDir) FontWeight.Bold else FontWeight.Normal
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = if (isDir) "Dir" else "File",
+                                    tint = if (isDir) colors.accentPrimary else colors.textMuted,
+                                    modifier = Modifier.size(16.dp)
                                 )
-                                if (!isDir) {
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "${formatFileSize(file.length())} · ${file.extension.uppercase().ifBlank { "TEXT" }}",
-                                        color = Color(0xFF64748B),
-                                        fontSize = 9.sp,
-                                        fontFamily = FontFamily.Monospace
+                                        text = file.name,
+                                        color = colors.textPrimary,
+                                        fontSize = 11.5.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = if (isDir) FontWeight.Bold else FontWeight.Normal
                                     )
+                                    if (!isDir) {
+                                        Text(
+                                            text = "${formatFileSize(file.length())} · ${file.extension.uppercase().ifBlank { "TEXT" }}",
+                                            color = colors.textMuted,
+                                            fontSize = 8.5.sp,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -242,6 +239,7 @@ fun CodeViewer(
     onCopy: () -> Unit,
     onSendToAgent: () -> Unit
 ) {
+    val colors = LocalGlyphColors.current
     val fileContent = remember(file) {
         try {
             if (file.length() > 2_000_000) {
@@ -259,12 +257,12 @@ fun CodeViewer(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF050608))
+            .background(colors.surfaceTerminal)
     ) {
         // Toolbar
         Surface(
-            color = Color(0xFF0F1218),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2330)),
+            color = colors.surfaceGlass,
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -274,33 +272,34 @@ fun CodeViewer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     IconButton(onClick = onBack, modifier = Modifier.size(26.dp)) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = Color(0xFF94A3B8),
+                            tint = colors.textSecondary,
                             modifier = Modifier.size(15.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = file.name,
-                        color = Color(0xFFF8FAFC),
-                        fontSize = 12.sp,
+                        color = colors.textPrimary,
+                        fontSize = 11.5.sp,
                         fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1
                     )
                 }
 
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(
                         onClick = onSendToAgent,
                         shape = RoundedCornerShape(4.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0284C7)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentPrimary),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color(0xFF38BDF8)
+                            contentColor = colors.accentPrimary
                         )
                     ) {
                         Icon(
@@ -309,7 +308,7 @@ fun CodeViewer(
                             modifier = Modifier.size(13.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(text = "ASK AGENT", fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        Text(text = "ASK AGENT", fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     }
 
                     Spacer(modifier = Modifier.width(6.dp))
@@ -318,7 +317,7 @@ fun CodeViewer(
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = "Copy",
-                            tint = Color(0xFF94A3B8),
+                            tint = colors.textSecondary,
                             modifier = Modifier.size(15.dp)
                         )
                     }
@@ -343,10 +342,10 @@ fun CodeViewer(
                     lines.indices.forEach { idx ->
                         Text(
                             text = "${idx + 1}",
-                            color = Color(0xFF334155),
-                            fontSize = 11.sp,
+                            color = colors.textMuted,
+                            fontSize = 10.5.sp,
                             fontFamily = FontFamily.Monospace,
-                            lineHeight = 16.sp
+                            lineHeight = 15.sp
                         )
                     }
                 }
@@ -356,10 +355,10 @@ fun CodeViewer(
                     lines.forEach { line ->
                         Text(
                             text = line,
-                            color = Color(0xFFE2E8F0),
-                            fontSize = 11.sp,
+                            color = colors.textPrimary,
+                            fontSize = 10.5.sp,
                             fontFamily = FontFamily.Monospace,
-                            lineHeight = 16.sp
+                            lineHeight = 15.sp
                         )
                     }
                 }

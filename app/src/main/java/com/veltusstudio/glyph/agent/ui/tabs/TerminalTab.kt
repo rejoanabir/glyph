@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -41,6 +42,7 @@ fun TerminalTab(
     workspaceDir: String,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalGlyphColors.current
     val coroutineScope = rememberCoroutineScope()
     var commandInput by remember { mutableStateOf("") }
     var isRunning by remember { mutableStateOf(false) }
@@ -71,12 +73,12 @@ fun TerminalTab(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF050608))
+            .background(colors.surfaceTerminal)
     ) {
         // Quick Action Bar
         Surface(
-            color = Color(0xFF0B0D12),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF161A24)),
+            color = colors.surfaceGlass,
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -94,14 +96,14 @@ fun TerminalTab(
                     quickCmds.forEach { cmd ->
                         Surface(
                             shape = RoundedCornerShape(3.dp),
-                            color = Color(0xFF11141C),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2330)),
+                            color = colors.surfaceCard,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
                             modifier = Modifier.clickable { executeCommand(cmd) }
                         ) {
                             Text(
                                 text = cmd,
-                                color = Color(0xFF38BDF8),
-                                fontSize = 10.sp,
+                                color = colors.accentPrimary,
+                                fontSize = 9.5.sp,
                                 fontFamily = FontFamily.Monospace,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                             )
@@ -116,7 +118,7 @@ fun TerminalTab(
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Clear",
-                        tint = Color(0xFF64748B),
+                        tint = colors.textMuted,
                         modifier = Modifier.size(14.dp)
                     )
                 }
@@ -128,63 +130,84 @@ fun TerminalTab(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .padding(8.dp)
         ) {
             if (history.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "ANTIGRAVITY LOCAL SHELL // READY\nTarget directory: $workspaceDir",
-                        color = Color(0xFF334155),
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp,
-                        fontFamily = FontFamily.Monospace,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Terminal,
+                            contentDescription = null,
+                            tint = colors.textMuted,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "BASH CONSOLE READY",
+                            color = colors.accentPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = "Commands execute in $workspaceDir",
+                            color = colors.textMuted,
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
                 }
             } else {
-                LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize()
+                ) {
                     items(history) { entry ->
                         Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                            // Command prompt row
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = "$ ",
-                                    color = Color(0xFF10B981),
+                                    color = colors.statusEmerald,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace
                                 )
                                 Text(
                                     text = entry.command,
-                                    color = Color(0xFFF8FAFC),
+                                    color = colors.textPrimary,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
-                                    text = "EXIT ${entry.exitCode}",
-                                    color = if (entry.exitCode == 0) Color(0xFF10B981) else Color(0xFFF43F5E),
-                                    fontSize = 9.sp,
+                                    text = if (entry.exitCode == 0) "EXIT 0" else "EXIT ${entry.exitCode}",
+                                    color = if (entry.exitCode == 0) colors.statusEmerald else colors.statusCrimson,
+                                    fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier
+                                        .background(
+                                            if (entry.exitCode == 0) colors.statusEmerald.copy(alpha = 0.15f) else colors.statusCrimson.copy(alpha = 0.15f),
+                                            RoundedCornerShape(2.dp)
+                                        )
+                                        .padding(horizontal = 4.dp, vertical = 1.dp)
                                 )
                             }
 
-                            // Command output
                             if (entry.output.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(2.dp))
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(3.dp))
-                                        .background(Color(0xFF090B0F))
-                                        .border(1.dp, Color(0xFF161A24), RoundedCornerShape(3.dp))
+                                        .padding(top = 4.dp)
+                                        .background(colors.surfaceCard, RoundedCornerShape(3.dp))
+                                        .border(1.dp, colors.borderSubtle, RoundedCornerShape(3.dp))
                                         .padding(6.dp)
                                 ) {
                                     Text(
                                         text = entry.output,
-                                        color = Color(0xFF94A3B8),
+                                        color = colors.textSecondary,
                                         fontSize = 10.sp,
                                         fontFamily = FontFamily.Monospace,
                                         lineHeight = 15.sp
@@ -199,8 +222,8 @@ fun TerminalTab(
 
         // Bottom Command Input
         Surface(
-            color = Color(0xFF0B0D12),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1A1F2C)),
+            color = colors.surfaceGlass,
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
             modifier = Modifier.fillMaxWidth().imePadding()
         ) {
             Row(
@@ -211,7 +234,7 @@ fun TerminalTab(
             ) {
                 Text(
                     text = "$ ",
-                    color = Color(0xFF38BDF8),
+                    color = colors.statusEmerald,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
@@ -224,7 +247,7 @@ fun TerminalTab(
                     placeholder = {
                         Text(
                             text = if (isRunning) "Executing command..." else "Enter bash command...",
-                            color = Color(0xFF475569),
+                            color = colors.textMuted,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace
                         )
@@ -239,8 +262,8 @@ fun TerminalTab(
                         unfocusedContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedTextColor = Color(0xFFF8FAFC),
-                        unfocusedTextColor = Color(0xFFF8FAFC)
+                        focusedTextColor = colors.textPrimary,
+                        unfocusedTextColor = colors.textPrimary
                     ),
                     singleLine = true,
                     enabled = !isRunning
@@ -252,12 +275,12 @@ fun TerminalTab(
                     modifier = Modifier
                         .size(32.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(if (commandInput.isNotBlank() && !isRunning) Color(0xFF0284C7) else Color(0xFF1E2330))
+                        .background(if (commandInput.isNotBlank() && !isRunning) colors.accentPrimary else colors.surfaceElevated)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Send,
                         contentDescription = "Run",
-                        tint = if (commandInput.isNotBlank() && !isRunning) Color.White else Color(0xFF64748B),
+                        tint = if (commandInput.isNotBlank() && !isRunning) colors.accentOnPrimary else colors.textMuted,
                         modifier = Modifier.size(14.dp)
                     )
                 }

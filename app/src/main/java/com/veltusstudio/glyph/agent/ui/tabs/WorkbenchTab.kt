@@ -28,6 +28,7 @@ import com.veltusstudio.glyph.agent.daemon.AgyDaemonManager
 import com.veltusstudio.glyph.agent.daemon.DaemonState
 import com.veltusstudio.glyph.agent.model.*
 import com.veltusstudio.glyph.agent.ui.*
+import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
 
 @Composable
 fun WorkbenchTab(
@@ -36,6 +37,7 @@ fun WorkbenchTab(
     daemonManager: AgyDaemonManager,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalGlyphColors.current
     val daemonState by daemonManager.daemonState.collectAsState()
     val messages by chatService.messages.collectAsState()
     val agentStatus by chatService.agentStatus.collectAsState()
@@ -55,14 +57,14 @@ fun WorkbenchTab(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF07080A))
+            .background(colors.bgObsidian)
     ) {
         // Disconnected warning banner
         if (daemonState != DaemonState.RUNNING) {
             Surface(
                 shape = RoundedCornerShape(4.dp),
-                color = Color(0xFF160F12),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBE123C)),
+                color = colors.statusCrimson.copy(alpha = 0.12f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.statusCrimson.copy(alpha = 0.5f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -76,27 +78,27 @@ fun WorkbenchTab(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "HUB CONNECTION REQUIRED",
-                            color = Color(0xFFF43F5E),
-                            fontSize = 11.sp,
+                            color = colors.statusCrimson,
+                            fontSize = 10.5.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
                             text = "Port 1237 offline. Tap to connect or start daemon.",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 10.sp,
+                            color = colors.textSecondary,
+                            fontSize = 9.5.sp,
                             fontFamily = FontFamily.Monospace
                         )
                     }
                     Surface(
                         shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFFE11D48),
+                        color = colors.statusCrimson,
                         modifier = Modifier.clickable { daemonManager.startOrConnectDaemon(workspaceDir) }
                     ) {
                         Text(
                             text = "CONNECT",
                             color = Color.White,
-                            fontSize = 10.sp,
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
@@ -124,25 +126,25 @@ fun WorkbenchTab(
                         modifier = Modifier.widthIn(max = 340.dp)
                     ) {
                         Text(
-                            text = "[ AGY NATIVE WORKBENCH ]",
-                            color = Color(0xFF38BDF8),
-                            fontSize = 13.sp,
+                            text = "[ GLYPH NATIVE WORKBENCH ]",
+                            color = colors.accentPrimary,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.1.sp,
                             fontFamily = FontFamily.Monospace
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Google Antigravity engine connected locally over port 1237. Select an action or write an instruction below.",
-                            color = Color(0xFF64748B),
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
+                            text = "Antigravity engine connected locally over port 1237. Select an action or write an instruction below.",
+                            color = colors.textMuted,
+                            fontSize = 10.5.sp,
+                            lineHeight = 15.sp,
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier.padding(bottom = 16.dp)
                         )
 
                         val quickPrompts = listOf(
-                            "Review repository structure",
+                            "Review repository architecture",
                             "Run build and test scripts",
                             "Check git status and pending changes",
                             "Search for performance bottlenecks"
@@ -151,11 +153,11 @@ fun WorkbenchTab(
                         quickPrompts.forEach { prompt ->
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
-                                color = Color(0xFF0F1218),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2330)),
+                                color = colors.surfaceCard,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
+                                    .padding(vertical = 3.dp)
                                     .clickable {
                                         if (daemonState != DaemonState.RUNNING) {
                                             daemonManager.startOrConnectDaemon(workspaceDir)
@@ -165,8 +167,8 @@ fun WorkbenchTab(
                             ) {
                                 Text(
                                     text = "> $prompt",
-                                    color = Color(0xFFCBD5E1),
-                                    fontSize = 11.sp,
+                                    color = colors.textPrimary,
+                                    fontSize = 10.5.sp,
                                     fontFamily = FontFamily.Monospace,
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                                 )
@@ -198,8 +200,9 @@ fun WorkbenchTab(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF0B0D12))
-                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .background(colors.surfaceGlass)
+                .border(androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle))
+                .padding(horizontal = 10.dp, vertical = 6.dp)
                 .imePadding()
         ) {
             pendingApproval?.let { approval ->
@@ -212,10 +215,38 @@ fun WorkbenchTab(
                 Spacer(modifier = Modifier.height(6.dp))
             }
 
+            // Quick Slash Action Chips
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf("/status", "/plan", "/git diff", "/fix", "/terminal").forEach { chip ->
+                    Surface(
+                        shape = RoundedCornerShape(3.dp),
+                        color = colors.surfaceElevated,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderActive),
+                        modifier = Modifier.clickable {
+                            inputText = if (inputText.isBlank()) chip else "$inputText $chip"
+                        }
+                    ) {
+                        Text(
+                            text = chip,
+                            color = colors.accentPrimary,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
             Surface(
                 shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF11141C),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2330)),
+                color = colors.surfaceCard,
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderActive),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
@@ -226,15 +257,15 @@ fun WorkbenchTab(
                     ) {
                         Text(
                             text = "WORKSPACE: ${workspaceDir.substringAfterLast('/')}",
-                            color = Color(0xFF64748B),
-                            fontSize = 9.sp,
+                            color = colors.textMuted,
+                            fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
                             text = "GEMINI 2.5 FLASH",
-                            color = Color(0xFF38BDF8),
-                            fontSize = 9.sp,
+                            color = colors.accentPrimary,
+                            fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
@@ -252,14 +283,14 @@ fun WorkbenchTab(
                             placeholder = {
                                 Text(
                                     text = "Assign task, shell instruction, or question...",
-                                    color = Color(0xFF475569),
-                                    fontSize = 12.sp,
+                                    color = colors.textMuted,
+                                    fontSize = 11.5.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
                             },
                             modifier = Modifier.weight(1f),
                             textStyle = LocalTextStyle.current.copy(
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
                                 fontFamily = FontFamily.Monospace
                             ),
                             colors = TextFieldDefaults.colors(
@@ -267,8 +298,8 @@ fun WorkbenchTab(
                                 unfocusedContainerColor = Color.Transparent,
                                 focusedIndicatorColor = Color.Transparent,
                                 unfocusedIndicatorColor = Color.Transparent,
-                                focusedTextColor = Color(0xFFF8FAFC),
-                                unfocusedTextColor = Color(0xFFF8FAFC)
+                                focusedTextColor = colors.textPrimary,
+                                unfocusedTextColor = colors.textPrimary
                             ),
                             singleLine = false,
                             maxLines = 4
@@ -280,15 +311,15 @@ fun WorkbenchTab(
                             IconButton(
                                 onClick = { chatService.cancelCurrentTask() },
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFFE11D48))
+                                    .background(colors.statusCrimson)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Stop,
                                     contentDescription = "Stop",
                                     tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                             }
                         } else {
@@ -305,15 +336,15 @@ fun WorkbenchTab(
                                 },
                                 enabled = inputText.isNotBlank(),
                                 modifier = Modifier
-                                    .size(36.dp)
+                                    .size(34.dp)
                                     .clip(RoundedCornerShape(6.dp))
-                                    .background(if (inputText.isNotBlank()) Color(0xFF0284C7) else Color(0xFF1E2330))
+                                    .background(if (inputText.isNotBlank()) colors.accentPrimary else colors.surfaceElevated)
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Send,
                                     contentDescription = "Send",
-                                    tint = if (inputText.isNotBlank()) Color.White else Color(0xFF64748B),
-                                    modifier = Modifier.size(16.dp)
+                                    tint = if (inputText.isNotBlank()) colors.accentOnPrimary else colors.textMuted,
+                                    modifier = Modifier.size(15.dp)
                                 )
                             }
                         }
@@ -326,6 +357,7 @@ fun WorkbenchTab(
 
 @Composable
 fun WorkbenchMessageItem(message: AgentMessage) {
+    val colors = LocalGlyphColors.current
     val isUser = message.role == Role.USER
 
     Column(
@@ -349,23 +381,23 @@ fun WorkbenchMessageItem(message: AgentMessage) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = "YOU [ LOCAL ]",
-                        color = Color(0xFF64748B),
-                        fontSize = 9.sp,
+                        color = colors.textMuted,
+                        fontSize = 8.5.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(bottom = 2.dp)
                     )
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = Color(0xFF161922),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF262C3D)),
+                        color = colors.surfaceElevated,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderActive),
                         modifier = Modifier.widthIn(max = 300.dp)
                     ) {
                         Text(
                             text = message.text,
-                            color = Color(0xFFF8FAFC),
-                            fontSize = 12.sp,
-                            lineHeight = 18.sp,
+                            color = colors.textPrimary,
+                            fontSize = 11.5.sp,
+                            lineHeight = 17.sp,
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                         )
@@ -374,24 +406,24 @@ fun WorkbenchMessageItem(message: AgentMessage) {
             } else {
                 Column(horizontalAlignment = Alignment.Start) {
                     Text(
-                        text = "ANTIGRAVITY [ HUB :1237 ]",
-                        color = Color(0xFF38BDF8),
-                        fontSize = 9.sp,
+                        text = "GLYPH [ HUB :1237 ]",
+                        color = colors.accentPrimary,
+                        fontSize = 8.5.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(bottom = 2.dp)
                     )
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = Color(0xFF0F1218),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2330)),
+                        color = colors.surfaceCard,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             text = message.text,
-                            color = Color(0xFFF1F5F9),
-                            fontSize = 12.sp,
-                            lineHeight = 19.sp,
+                            color = colors.textPrimary,
+                            fontSize = 11.5.sp,
+                            lineHeight = 18.sp,
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier.padding(12.dp)
                         )

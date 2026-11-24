@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,13 +24,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.veltusstudio.glyph.agent.core.AgyChatService
+import com.veltusstudio.glyph.R
 import com.veltusstudio.glyph.agent.daemon.AgyDaemonManager
 import com.veltusstudio.glyph.agent.daemon.DaemonState
+import com.veltusstudio.glyph.agent.ui.theme.LocalActivePalette
+import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
+import com.veltusstudio.glyph.agent.ui.theme.PaletteId
 import java.io.File
 
 @Composable
@@ -37,15 +42,19 @@ fun WorkspaceDrawer(
     currentWorkspace: String,
     onSelectWorkspace: (String) -> Unit,
     onNewSession: () -> Unit,
+    onNavigateScreen: (String) -> Unit,
     daemonManager: AgyDaemonManager,
     onCloseDrawer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalGlyphColors.current
+    val activePaletteState = LocalActivePalette.current
     val context = LocalContext.current
     val daemonState by daemonManager.daemonState.collectAsState()
+
     var showCustomPathDialog by remember { mutableStateOf(false) }
     var customPathInput by remember { mutableStateOf("") }
-    var selectedSafetyMode by remember { mutableStateOf("Autonomous") }
+    var selectedSafetyMode by remember { mutableStateOf("SUPERVISED") }
 
     val presetWorkspaces = remember {
         listOf(
@@ -62,7 +71,7 @@ fun WorkspaceDrawer(
             title = {
                 Text(
                     text = "OPEN WORKSPACE DIRECTORY",
-                    color = Color(0xFFF8FAFC),
+                    color = colors.textPrimary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
@@ -72,7 +81,7 @@ fun WorkspaceDrawer(
                 Column {
                     Text(
                         text = "Specify an absolute path on storage:",
-                        color = Color(0xFF94A3B8),
+                        color = colors.textSecondary,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace
                     )
@@ -83,7 +92,7 @@ fun WorkspaceDrawer(
                         placeholder = {
                             Text(
                                 text = "/storage/emulated/0/...",
-                                color = Color(0xFF475569),
+                                color = colors.textMuted,
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace
                             )
@@ -91,7 +100,7 @@ fun WorkspaceDrawer(
                         textStyle = LocalTextStyle.current.copy(
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
-                            color = Color(0xFFF8FAFC)
+                            color = colors.textPrimary
                         ),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -110,15 +119,15 @@ fun WorkspaceDrawer(
                         showCustomPathDialog = false
                     }
                 ) {
-                    Text(text = "OPEN", color = Color(0xFF38BDF8), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Text(text = "OPEN", color = colors.accentPrimary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showCustomPathDialog = false }) {
-                    Text(text = "CANCEL", color = Color(0xFF64748B), fontFamily = FontFamily.Monospace)
+                    Text(text = "CANCEL", color = colors.textMuted, fontFamily = FontFamily.Monospace)
                 }
             },
-            containerColor = Color(0xFF0C0E14)
+            containerColor = colors.surfaceCard
         )
     }
 
@@ -126,8 +135,8 @@ fun WorkspaceDrawer(
         modifier = modifier
             .fillMaxHeight()
             .width(310.dp),
-        drawerContainerColor = Color(0xFF07090D),
-        drawerContentColor = Color(0xFFF8FAFC)
+        drawerContainerColor = colors.surfaceGlass,
+        drawerContentColor = colors.textPrimary
     ) {
         Column(
             modifier = Modifier
@@ -135,7 +144,7 @@ fun WorkspaceDrawer(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            // Header
+            // Header with Original Brushed Silver Glyph Logo
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -143,33 +152,33 @@ fun WorkspaceDrawer(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFF0284C7),
-                        modifier = Modifier.size(26.dp)
+                        shape = RoundedCornerShape(6.dp),
+                        color = colors.surfaceCard,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderActive),
+                        modifier = Modifier.size(32.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "AG",
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
+                        Image(
+                            painter = painterResource(id = R.drawable.glyph_logo),
+                            contentDescription = "Glyph Logo",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(3.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                        )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "ANTIGRAVITY",
-                            color = Color(0xFFF8FAFC),
-                            fontSize = 13.sp,
+                            text = "GLYPH // MOBILE IDE",
+                            color = colors.textPrimary,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.08.sp,
+                            letterSpacing = 0.06.sp,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
-                            text = "MOBILE IDE · v2.1",
-                            color = Color(0xFF64748B),
+                            text = "v2.1 · ARM64 · ANTIGRAVITY ENGINE",
+                            color = colors.textMuted,
                             fontSize = 8.sp,
                             fontFamily = FontFamily.Monospace
                         )
@@ -180,70 +189,181 @@ fun WorkspaceDrawer(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close",
-                        tint = Color(0xFF94A3B8),
+                        tint = colors.textSecondary,
                         modifier = Modifier.size(16.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Action: New Session
-            Surface(
+            // CTA: New Cascade Session
+            Button(
+                onClick = {
+                    onNewSession()
+                    onCloseDrawer()
+                },
                 shape = RoundedCornerShape(4.dp),
-                color = Color(0xFF0E121B),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0284C7)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        onNewSession()
-                        onCloseDrawer()
-                    }
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accentPrimary,
+                    contentColor = colors.accentOnPrimary
+                ),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    modifier = Modifier.padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "New Session",
-                        tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "NEW CASCADE SESSION",
-                        color = Color(0xFF38BDF8),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "NEW CASCADE SESSION",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.08.sp
+                )
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
-            // Workspaces section
+            // Screen Navigation Flow
             Text(
-                text = "WORKSPACES",
-                color = Color(0xFF64748B),
-                fontSize = 10.sp,
+                text = "SCREEN FLOW NAVIGATOR",
+                color = colors.textMuted,
+                fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.08.sp,
                 fontFamily = FontFamily.Monospace
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
+
+            val screens = listOf(
+                "boot" to "01 BOOT SEQUENCE",
+                "onboard" to "02 ONBOARDING CAROUSEL",
+                "auth" to "03 AUTH & CREDENTIALS",
+                "perms" to "04 SYSTEM PERMISSIONS",
+                "daemon" to "05 DAEMON ENGINE SETUP",
+                "ide" to "06 MAIN IDE SHELL"
+            )
+
+            screens.forEach { (id, title) ->
+                Surface(
+                    shape = RoundedCornerShape(3.dp),
+                    color = colors.surfaceCard,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp)
+                        .clickable {
+                            onNavigateScreen(id)
+                            onCloseDrawer()
+                        }
+                ) {
+                    Text(
+                        text = title,
+                        color = if (id == "ide") colors.accentPrimary else colors.textSecondary,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // Theme Palette Switcher (All 5 Live Palettes)
+            Text(
+                text = "LIVE PALETTE ENGINE",
+                color = colors.textMuted,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.08.sp,
+                fontFamily = FontFamily.Monospace
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            PaletteId.values().forEach { palette ->
+                val isSelected = activePaletteState.value == palette
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = if (isSelected) colors.surfaceElevated else colors.surfaceCard,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isSelected) colors.accentPrimary else colors.borderSubtle
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.5.dp)
+                        .clickable { activePaletteState.value = palette }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(palette.dotColor)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = palette.label,
+                                    color = if (isSelected) colors.textPrimary else colors.textSecondary,
+                                    fontSize = 10.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = palette.vibe,
+                                    color = colors.textMuted,
+                                    fontSize = 8.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+
+                        if (isSelected) {
+                            Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = colors.accentPrimary, modifier = Modifier.size(13.dp))
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // Workspaces section
+            Text(
+                text = "WORKSPACES",
+                color = colors.textMuted,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.08.sp,
+                fontFamily = FontFamily.Monospace
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             presetWorkspaces.forEach { dir ->
                 val isSelected = dir.absolutePath == currentWorkspace
                 Surface(
                     shape = RoundedCornerShape(4.dp),
-                    color = if (isSelected) Color(0xFF131A26) else Color(0xFF0A0D14),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFF0284C7) else Color(0xFF1A1F2C)),
+                    color = if (isSelected) colors.surfaceElevated else colors.surfaceCard,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isSelected) colors.accentPrimary else colors.borderSubtle
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 3.dp)
+                        .padding(vertical = 2.5.dp)
                         .clickable {
                             onSelectWorkspace(dir.absolutePath)
                             onCloseDrawer()
@@ -256,21 +376,21 @@ fun WorkspaceDrawer(
                         Icon(
                             imageVector = if (isSelected) Icons.Default.FolderOpen else Icons.Default.Folder,
                             contentDescription = "Folder",
-                            tint = if (isSelected) Color(0xFF38BDF8) else Color(0xFF64748B),
+                            tint = if (isSelected) colors.accentPrimary else colors.textMuted,
                             modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = dir.name.ifBlank { "Root" },
-                                color = if (isSelected) Color(0xFFF8FAFC) else Color(0xFF94A3B8),
+                                color = if (isSelected) colors.textPrimary else colors.textSecondary,
                                 fontSize = 11.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
                                 text = dir.absolutePath,
-                                color = Color(0xFF475569),
+                                color = colors.textMuted,
                                 fontSize = 8.sp,
                                 fontFamily = FontFamily.Monospace,
                                 maxLines = 1
@@ -285,47 +405,43 @@ fun WorkspaceDrawer(
             OutlinedButton(
                 onClick = { showCustomPathDialog = true },
                 shape = RoundedCornerShape(4.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2330)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderActive),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    imageVector = Icons.Default.CreateNewFolder,
-                    contentDescription = "Custom Path",
-                    tint = Color(0xFF94A3B8),
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "OPEN CUSTOM FOLDER...",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 10.sp,
+                    text = "+ OPEN CUSTOM FOLDER...",
+                    color = colors.textSecondary,
+                    fontSize = 9.sp,
                     fontFamily = FontFamily.Monospace
                 )
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             // Safety Mode
             Text(
                 text = "EXECUTION SAFETY MODE",
-                color = Color(0xFF64748B),
-                fontSize = 10.sp,
+                color = colors.textMuted,
+                fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.08.sp,
                 fontFamily = FontFamily.Monospace
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            listOf("Autonomous", "Supervised", "Read-Only").forEach { mode ->
+            listOf("AUTONOMOUS", "SUPERVISED", "READ-ONLY").forEach { mode ->
                 val isSelected = selectedSafetyMode == mode
                 Surface(
                     shape = RoundedCornerShape(4.dp),
-                    color = if (isSelected) Color(0xFF131A26) else Color(0xFF0A0D14),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFF0284C7) else Color(0xFF1A1F2C)),
+                    color = if (isSelected) colors.surfaceElevated else colors.surfaceCard,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (isSelected) colors.accentPrimary else colors.borderSubtle
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 3.dp)
+                        .padding(vertical = 2.5.dp)
                         .clickable { selectedSafetyMode = mode }
                 ) {
                     Row(
@@ -334,8 +450,8 @@ fun WorkspaceDrawer(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = mode.uppercase(),
-                            color = if (isSelected) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                            text = mode,
+                            color = if (isSelected) colors.accentPrimary else colors.textSecondary,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
@@ -344,8 +460,8 @@ fun WorkspaceDrawer(
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = "Active",
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(14.dp)
+                                tint = colors.accentPrimary,
+                                modifier = Modifier.size(13.dp)
                             )
                         }
                     }
@@ -354,51 +470,11 @@ fun WorkspaceDrawer(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Storage Permissions
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = Color(0xFF1E170A),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB45309)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            try {
-                                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                                    data = Uri.parse("package:${context.packageName}")
-                                }
-                                context.startActivity(intent)
-                            } catch (_: Exception) {
-                                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                                context.startActivity(intent)
-                            }
-                        }
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Text(
-                            text = "STORAGE PERMISSION",
-                            color = Color(0xFFFBBF24),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Tap to grant All Files access for full device workspace support.",
-                            color = Color(0xFFD97706),
-                            fontSize = 9.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(20.dp))
-            }
-
             // Daemon status footer
             Surface(
                 shape = RoundedCornerShape(4.dp),
-                color = Color(0xFF0A0D14),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1A1F2C)),
+                color = colors.bgObsidian,
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -406,41 +482,44 @@ fun WorkspaceDrawer(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column {
-                        Text(
-                            text = "DAEMON RUNTIME",
-                            color = Color(0xFF64748B),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when (daemonState) {
+                                        DaemonState.RUNNING -> colors.statusEmerald
+                                        DaemonState.STARTING -> colors.statusAmber
+                                        else -> colors.statusCrimson
+                                    }
+                                )
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = when (daemonState) {
                                 DaemonState.RUNNING -> "ACTIVE (HUB :1237)"
                                 DaemonState.STARTING -> "STARTING..."
-                                DaemonState.ERROR -> "ERROR / OFFLINE"
+                                DaemonState.ERROR -> "OFFLINE / ERROR"
                                 DaemonState.STOPPED -> "STOPPED"
                             },
-                            color = when (daemonState) {
-                                DaemonState.RUNNING -> Color(0xFF10B981)
-                                DaemonState.STARTING -> Color(0xFFF59E0B)
-                                else -> Color(0xFFEF4444)
-                            },
-                            fontSize = 9.sp,
+                            color = colors.textSecondary,
+                            fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1
                         )
                     }
 
                     IconButton(
                         onClick = { daemonManager.startOrConnectDaemon(currentWorkspace) },
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Restart Daemon",
-                            tint = Color(0xFF38BDF8),
-                            modifier = Modifier.size(15.dp)
+                            tint = colors.accentPrimary,
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }

@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
 
 @Composable
 fun ThoughtCard(
@@ -31,9 +32,10 @@ fun ThoughtCard(
     modifier: Modifier = Modifier,
     isStreaming: Boolean = false
 ) {
+    val colors = LocalGlyphColors.current
     var isExpanded by remember { mutableStateOf(isStreaming) }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val infiniteTransition = rememberInfiniteTransition(label = "thoughtPulse")
     val dotAlpha by infiniteTransition.animateFloat(
         initialValue = 0.3f,
         targetValue = 1f,
@@ -48,10 +50,10 @@ fun ThoughtCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, Color(0xFF1E2330), RoundedCornerShape(6.dp)),
+            .clip(RoundedCornerShape(5.dp))
+            .border(1.dp, colors.borderSubtle, RoundedCornerShape(5.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF0F1218)
+            containerColor = colors.surfaceCard
         )
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
@@ -68,14 +70,14 @@ fun ThoughtCard(
                             .size(7.dp)
                             .clip(CircleShape)
                             .background(
-                                if (isStreaming) Color(0xFF38BDF8).copy(alpha = dotAlpha) else Color(0xFF64748B)
+                                if (isStreaming) colors.accentPrimary.copy(alpha = dotAlpha) else colors.textMuted
                             )
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isStreaming) "REASONING [ STREAMING ]" else "REASONING LOG",
-                        color = if (isStreaming) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-                        fontSize = 11.sp,
+                        text = if (isStreaming) "THINKING PROTOCOL [ STREAMING ]" else "THINKING PROTOCOL",
+                        color = if (isStreaming) colors.accentPrimary else colors.textSecondary,
+                        fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.08.sp,
                         fontFamily = FontFamily.Monospace
@@ -85,7 +87,7 @@ fun ThoughtCard(
                 Icon(
                     imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = "Toggle",
-                    tint = Color(0xFF64748B),
+                    tint = colors.textMuted,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -96,16 +98,16 @@ fun ThoughtCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFF07090D))
-                            .border(1.dp, Color(0xFF171A24), RoundedCornerShape(4.dp))
+                            .background(colors.surfaceTerminal)
+                            .border(1.dp, colors.borderSubtle, RoundedCornerShape(4.dp))
                             .padding(10.dp)
                     ) {
                         Text(
                             text = thoughtText,
-                            color = Color(0xFF94A3B8),
-                            fontSize = 12.sp,
+                            color = colors.textSecondary,
+                            fontSize = 11.5.sp,
                             fontFamily = FontFamily.Monospace,
-                            lineHeight = 18.sp
+                            lineHeight = 17.sp
                         )
                     }
                 }

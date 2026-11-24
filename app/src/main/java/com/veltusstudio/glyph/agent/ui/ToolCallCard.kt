@@ -26,31 +26,33 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.veltusstudio.glyph.agent.model.AgentToolCall
 import com.veltusstudio.glyph.agent.model.ToolStatus
+import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
 
 @Composable
 fun ToolCallCard(
     toolCall: AgentToolCall,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalGlyphColors.current
     var isExpanded by remember {
         mutableStateOf(toolCall.status == ToolStatus.RUNNING || toolCall.status == ToolStatus.FAILED || !toolCall.output.isNullOrBlank())
     }
 
     val (badgeColor, badgeBg) = when (toolCall.status) {
-        ToolStatus.COMPLETED -> Color(0xFF10B981) to Color(0x1F10B981)
-        ToolStatus.RUNNING -> Color(0xFF38BDF8) to Color(0x1F38BDF8)
-        ToolStatus.FAILED -> Color(0xFFF43F5E) to Color(0x1FF43F5E)
-        ToolStatus.PENDING -> Color(0xFFF59E0B) to Color(0x1FF59E0B)
+        ToolStatus.COMPLETED -> colors.statusEmerald to colors.statusEmerald.copy(alpha = 0.15f)
+        ToolStatus.RUNNING -> colors.accentPrimary to colors.accentPrimary.copy(alpha = 0.15f)
+        ToolStatus.FAILED -> colors.statusCrimson to colors.statusCrimson.copy(alpha = 0.15f)
+        ToolStatus.PENDING -> colors.statusAmber to colors.statusAmber.copy(alpha = 0.15f)
     }
 
     Card(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, Color(0xFF1E2330), RoundedCornerShape(6.dp)),
+            .clip(RoundedCornerShape(5.dp))
+            .border(1.dp, colors.borderSubtle, RoundedCornerShape(5.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF0F1218)
+            containerColor = colors.surfaceCard
         )
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
@@ -81,13 +83,13 @@ fun ToolCallCard(
                     Icon(
                         imageVector = icon,
                         contentDescription = "Tool",
-                        tint = Color(0xFF94A3B8),
+                        tint = colors.textSecondary,
                         modifier = Modifier.size(15.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = label,
-                        color = Color(0xFFF1F5F9),
+                        color = colors.textPrimary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.06.sp,
@@ -104,17 +106,17 @@ fun ToolCallCard(
                         Text(
                             text = toolCall.status.name,
                             color = badgeColor,
-                            fontSize = 9.sp,
+                            fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Icon(
                         imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                         contentDescription = "Expand",
-                        tint = Color(0xFF64748B),
+                        tint = colors.textMuted,
                         modifier = Modifier.size(15.dp)
                     )
                 }
@@ -127,14 +129,14 @@ fun ToolCallCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(4.dp))
-                        .background(Color(0xFF07090D))
-                        .border(1.dp, Color(0xFF171A24), RoundedCornerShape(4.dp))
+                        .background(colors.surfaceTerminal)
+                        .border(1.dp, colors.borderSubtle, RoundedCornerShape(4.dp))
                         .padding(8.dp)
                 ) {
                     Text(
                         text = if (toolCall.name == "run_command") "$ ${toolCall.displayCommand}" else toolCall.displayCommand,
-                        color = Color(0xFFE2E8F0),
-                        fontSize = 11.sp,
+                        color = colors.textPrimary,
+                        fontSize = 10.5.sp,
                         fontFamily = FontFamily.Monospace
                     )
                 }
@@ -151,8 +153,8 @@ fun ToolCallCard(
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "CONSOLE OUTPUT",
-                            color = Color(0xFF64748B),
-                            fontSize = 9.sp,
+                            color = colors.textMuted,
+                            fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
                             letterSpacing = 0.05.sp
@@ -163,14 +165,14 @@ fun ToolCallCard(
                                 .fillMaxWidth()
                                 .heightIn(max = 240.dp)
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFF050608))
-                                .border(1.dp, Color(0xFF151820), RoundedCornerShape(4.dp))
+                                .background(colors.surfaceTerminal)
+                                .border(1.dp, colors.borderSubtle, RoundedCornerShape(4.dp))
                                 .padding(8.dp)
                         ) {
                             Text(
                                 text = toolCall.output,
-                                color = Color(0xFF94A3B8),
-                                fontSize = 11.sp,
+                                color = colors.textSecondary,
+                                fontSize = 10.5.sp,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
@@ -183,20 +185,21 @@ fun ToolCallCard(
 
 @Composable
 fun DiffViewer(diffBefore: String, diffAfter: String) {
+    val colors = LocalGlyphColors.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(4.dp))
-            .background(Color(0xFF050608))
-            .border(1.dp, Color(0xFF151820), RoundedCornerShape(4.dp))
+            .background(colors.surfaceTerminal)
+            .border(1.dp, colors.borderSubtle, RoundedCornerShape(4.dp))
             .padding(8.dp)
     ) {
         if (diffBefore.isNotBlank()) {
             diffBefore.lines().forEach { line ->
                 Text(
                     text = "- $line",
-                    color = Color(0xFFF87171),
-                    fontSize = 11.sp,
+                    color = colors.statusCrimson,
+                    fontSize = 10.5.sp,
                     fontFamily = FontFamily.Monospace
                 )
             }
@@ -205,8 +208,8 @@ fun DiffViewer(diffBefore: String, diffAfter: String) {
             diffAfter.lines().forEach { line ->
                 Text(
                     text = "+ $line",
-                    color = Color(0xFF34D399),
-                    fontSize = 11.sp,
+                    color = colors.statusEmerald,
+                    fontSize = 10.5.sp,
                     fontFamily = FontFamily.Monospace
                 )
             }

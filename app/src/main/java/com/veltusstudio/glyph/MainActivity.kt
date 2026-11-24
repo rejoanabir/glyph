@@ -5,16 +5,17 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.ContextCompat
 import com.veltusstudio.glyph.agent.ui.AntigravityMainWorkspace
+import com.veltusstudio.glyph.agent.ui.theme.GlyphTheme
+import com.veltusstudio.glyph.agent.ui.theme.LocalActivePalette
+import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
+import com.veltusstudio.glyph.agent.ui.theme.PaletteId
 
 class MainActivity : ComponentActivity() {
 
@@ -27,27 +28,21 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        @Suppress("DEPRECATION")
-        window.statusBarColor = Color(0xFF07080A).toArgb()
-        @Suppress("DEPRECATION")
-        window.navigationBarColor = Color(0xFF07080A).toArgb()
-
         requestRequiredPermissions()
         startKeepAliveService()
 
         setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    background = Color(0xFF07080A),
-                    surface = Color(0xFF0C0E14),
-                    primary = Color(0xFF38BDF8),
-                    secondary = Color(0xFF0284C7),
-                    tertiary = Color(0xFF10B981),
-                    onBackground = Color(0xFFF8FAFC),
-                    onSurface = Color(0xFFF8FAFC)
-                )
-            ) {
-                AntigravityMainWorkspace()
+            val activePaletteState = remember { mutableStateOf(PaletteId.NOIR_VIOLET) }
+            CompositionLocalProvider(LocalActivePalette provides activePaletteState) {
+                GlyphTheme(paletteId = activePaletteState.value) {
+                    val colors = LocalGlyphColors.current
+                    @Suppress("DEPRECATION")
+                    window.statusBarColor = colors.surfaceGlass.toArgb()
+                    @Suppress("DEPRECATION")
+                    window.navigationBarColor = colors.surfaceGlass.toArgb()
+
+                    AntigravityMainWorkspace()
+                }
             }
         }
     }
@@ -78,7 +73,7 @@ class MainActivity : ComponentActivity() {
     private fun startKeepAliveService() {
         try {
             val serviceIntent = Intent(this, GlyphKeepAliveService::class.java).apply {
-                putExtra("status", "Antigravity Agent Daemon Active")
+                putExtra("status", "Glyph Agent Subsystem Active")
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent)

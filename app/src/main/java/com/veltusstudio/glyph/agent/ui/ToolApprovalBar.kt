@@ -17,22 +17,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.veltusstudio.glyph.agent.model.PendingToolApproval
+import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
 
 @Composable
 fun ToolApprovalBar(
     approval: PendingToolApproval,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalGlyphColors.current
     var rememberChoice by remember { mutableStateOf(false) }
 
     Card(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, Color(0xFFF59E0B), RoundedCornerShape(6.dp)),
+            .clip(RoundedCornerShape(5.dp))
+            .border(1.dp, colors.statusAmber.copy(alpha = 0.5f), RoundedCornerShape(5.dp)),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF14120C)
+            containerColor = Color(0x1EF59E0B)
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -40,15 +42,15 @@ fun ToolApprovalBar(
                 Icon(
                     imageVector = Icons.Default.Shield,
                     contentDescription = "Security",
-                    tint = Color(0xFFF59E0B),
+                    tint = colors.statusAmber,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "ACTION REQUIRES AUTHORIZATION",
-                    color = Color(0xFFFBBF24),
+                    color = colors.statusAmber,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
+                    fontSize = 10.5.sp,
                     letterSpacing = 0.08.sp,
                     fontFamily = FontFamily.Monospace
                 )
@@ -57,8 +59,8 @@ fun ToolApprovalBar(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = "${approval.actionSummary}:",
-                color = Color(0xFF94A3B8),
-                fontSize = 12.sp,
+                color = colors.textSecondary,
+                fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace
             )
 
@@ -67,15 +69,15 @@ fun ToolApprovalBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(4.dp))
-                    .background(Color(0xFF090805))
-                    .border(1.dp, Color(0xFF2E2413), RoundedCornerShape(4.dp))
+                    .background(colors.surfaceTerminal)
+                    .border(1.dp, colors.borderSubtle, RoundedCornerShape(4.dp))
                     .padding(8.dp)
             ) {
                 Text(
                     text = approval.commandOrDiff,
-                    color = Color(0xFFFDE68A),
+                    color = colors.textPrimary,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp
+                    fontSize = 10.5.sp
                 )
             }
 
@@ -90,14 +92,14 @@ fun ToolApprovalBar(
                         checked = rememberChoice,
                         onCheckedChange = { rememberChoice = it },
                         colors = CheckboxDefaults.colors(
-                            checkedColor = Color(0xFFF59E0B),
-                            uncheckedColor = Color(0xFF64748B)
+                            checkedColor = colors.accentPrimary,
+                            uncheckedColor = colors.textMuted
                         )
                     )
                     Text(
                         text = "Remember for session",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 11.sp,
+                        color = colors.textSecondary,
+                        fontSize = 10.5.sp,
                         fontFamily = FontFamily.Monospace
                     )
                 }
@@ -106,15 +108,15 @@ fun ToolApprovalBar(
                     OutlinedButton(
                         onClick = { approval.onDecision(false, rememberChoice) },
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color(0xFFF43F5E)
+                            contentColor = colors.statusCrimson
                         ),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x66F43F5E)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.statusCrimson.copy(alpha = 0.4f)),
                         shape = RoundedCornerShape(4.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
                             text = "DENY",
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
@@ -125,17 +127,17 @@ fun ToolApprovalBar(
                     Button(
                         onClick = { approval.onDecision(true, rememberChoice) },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF10B981)
+                            containerColor = colors.statusEmerald
                         ),
                         shape = RoundedCornerShape(4.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            text = "AUTHORIZE",
-                            fontSize = 11.sp,
+                            text = "APPROVE",
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
-                            color = Color(0xFF022C1C)
+                            color = Color.White
                         )
                     }
                 }

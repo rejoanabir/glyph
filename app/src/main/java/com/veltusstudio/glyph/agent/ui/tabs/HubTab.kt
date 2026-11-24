@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.veltusstudio.glyph.agent.core.AgyCsrfManager
 import com.veltusstudio.glyph.agent.daemon.AgyDaemonManager
 import com.veltusstudio.glyph.agent.daemon.DaemonState
+import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
 
 data class SupportedAiModel(
     val id: String,
@@ -67,6 +68,7 @@ fun HubTab(
     workspaceDir: String,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalGlyphColors.current
     val daemonState by daemonManager.daemonState.collectAsState()
     val statusMsg by daemonManager.statusMessage.collectAsState()
     var selectedModelId by remember { mutableStateOf("gemini-2.5-flash") }
@@ -87,15 +89,15 @@ fun HubTab(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF07080A))
+            .background(colors.bgObsidian)
             .verticalScroll(rememberScrollState())
             .padding(12.dp)
     ) {
         // Hub Engine Status Card
         Surface(
             shape = RoundedCornerShape(6.dp),
-            color = Color(0xFF0C0E14),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2330)),
+            color = colors.surfaceCard,
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
@@ -108,13 +110,13 @@ fun HubTab(
                         Icon(
                             imageVector = Icons.Default.Memory,
                             contentDescription = "Engine",
-                            tint = Color(0xFF38BDF8),
+                            tint = colors.accentPrimary,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "ANTIGRAVITY ENGINE RUNTIME",
-                            color = Color(0xFFF8FAFC),
+                            text = "GLYPH ENGINE RUNTIME",
+                            color = colors.textPrimary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.08.sp,
@@ -132,10 +134,28 @@ fun HubTab(
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refresh",
-                            tint = Color(0xFF94A3B8),
+                            tint = colors.textSecondary,
                             modifier = Modifier.size(16.dp)
                         )
                     }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    DiagnosticChip(
+                        label = "PORT 1236 [BRIDGE]",
+                        isOpen = port1236Open,
+                        modifier = Modifier.weight(1f)
+                    )
+                    DiagnosticChip(
+                        label = "PORT 1237 [HUB gRPC]",
+                        isOpen = port1237Open,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -144,44 +164,33 @@ fun HubTab(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    DiagnosticChip(label = "BRIDGE :1236", isOpen = port1236Open, modifier = Modifier.weight(1f))
-                    DiagnosticChip(label = "HUB :1237", isOpen = port1237Open, modifier = Modifier.weight(1f))
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
+                    Button(
+                        onClick = { daemonManager.startOrConnectDaemon(workspaceDir) },
+                        shape = RoundedCornerShape(4.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.accentPrimary,
+                            contentColor = colors.accentOnPrimary
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Text(
-                            text = "STATE: $statusMsg",
-                            color = if (daemonState == DaemonState.RUNNING) Color(0xFF10B981) else Color(0xFFF59E0B),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Text(
-                            text = "TOKEN: ${csrfManager.securityToken.take(6)}... · CSRF: ${csrfManager.hubCsrfToken.take(8).ifBlank { "NONE" }}",
-                            color = Color(0xFF64748B),
+                            text = "START / RESTART",
                             fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                     }
 
-                    Button(
-                        onClick = { daemonManager.startOrConnectDaemon(workspaceDir) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (daemonState == DaemonState.RUNNING) Color(0xFF1E2330) else Color(0xFF0284C7)
-                        ),
+                    OutlinedButton(
+                        onClick = { daemonManager.stopDaemon() },
                         shape = RoundedCornerShape(4.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderActive),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.textSecondary),
+                        modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = if (daemonState == DaemonState.RUNNING) "RESTART" else "CONNECT",
-                            fontSize = 10.sp,
+                            text = "STOP DAEMON",
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
@@ -192,36 +201,26 @@ fun HubTab(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Models Selection Header
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Default.Tune,
-                contentDescription = "Models",
-                tint = Color(0xFF38BDF8),
-                modifier = Modifier.size(15.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "ACTIVE MODEL REGISTRY",
-                color = Color(0xFFF8FAFC),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.08.sp,
-                fontFamily = FontFamily.Monospace
-            )
-        }
+        // Model Selection Cards
+        Text(
+            text = "AI MODEL REGISTRY",
+            color = colors.textPrimary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.08.sp,
+            fontFamily = FontFamily.Monospace
+        )
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Model Cards
         DEFAULT_MODELS.forEach { model ->
-            val isSelected = selectedModelId == model.id
+            val isSelected = model.id == selectedModelId
             Surface(
                 shape = RoundedCornerShape(4.dp),
-                color = if (isSelected) Color(0xFF0E1824) else Color(0xFF0C0E14),
+                color = if (isSelected) colors.surfaceElevated else colors.surfaceCard,
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
-                    if (isSelected) Color(0xFF38BDF8) else Color(0xFF1A1F2C)
+                    if (isSelected) colors.accentPrimary else colors.borderSubtle
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -230,25 +229,26 @@ fun HubTab(
             ) {
                 Row(
                     modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = model.name,
-                                color = if (isSelected) Color(0xFFF8FAFC) else Color(0xFFCBD5E1),
-                                fontSize = 12.sp,
+                                color = if (isSelected) colors.textPrimary else colors.textSecondary,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(2.dp),
-                                color = Color(0x1F38BDF8)
+                                color = colors.accentGlow
                             ) {
                                 Text(
                                     text = model.provider.uppercase(),
-                                    color = Color(0xFF38BDF8),
+                                    color = colors.accentPrimary,
                                     fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace,
@@ -259,8 +259,8 @@ fun HubTab(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = model.desc,
-                            color = Color(0xFF64748B),
-                            fontSize = 10.sp,
+                            color = colors.textMuted,
+                            fontSize = 9.5.sp,
                             fontFamily = FontFamily.Monospace
                         )
                     }
@@ -269,7 +269,7 @@ fun HubTab(
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = "Selected",
-                            tint = Color(0xFF38BDF8),
+                            tint = colors.accentPrimary,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -282,7 +282,7 @@ fun HubTab(
         // Quota Telemetry Cards
         Text(
             text = "USAGE & QUOTA LIMITS",
-            color = Color(0xFFF8FAFC),
+            color = colors.textPrimary,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 0.08.sp,
@@ -293,8 +293,8 @@ fun HubTab(
 
         Surface(
             shape = RoundedCornerShape(4.dp),
-            color = Color(0xFF0C0E14),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2330)),
+            color = colors.surfaceCard,
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
@@ -310,10 +310,11 @@ fun HubTab(
 
 @Composable
 fun DiagnosticChip(label: String, isOpen: Boolean, modifier: Modifier = Modifier) {
+    val colors = LocalGlyphColors.current
     Surface(
         shape = RoundedCornerShape(4.dp),
-        color = Color(0xFF07090D),
-        border = androidx.compose.foundation.BorderStroke(1.dp, if (isOpen) Color(0xFF059669) else Color(0xFFE11D48)),
+        color = colors.surfaceTerminal,
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (isOpen) colors.statusEmerald else colors.statusCrimson),
         modifier = modifier
     ) {
         Row(
@@ -324,20 +325,20 @@ fun DiagnosticChip(label: String, isOpen: Boolean, modifier: Modifier = Modifier
                 modifier = Modifier
                     .size(6.dp)
                     .clip(CircleShape)
-                    .background(if (isOpen) Color(0xFF10B981) else Color(0xFFF43F5E))
+                    .background(if (isOpen) colors.statusEmerald else colors.statusCrimson)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Column {
                 Text(
                     text = label,
-                    color = Color(0xFFCBD5E1),
-                    fontSize = 9.sp,
+                    color = colors.textSecondary,
+                    fontSize = 8.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
                 )
                 Text(
                     text = if (isOpen) "ONLINE" else "OFFLINE",
-                    color = if (isOpen) Color(0xFF10B981) else Color(0xFFF43F5E),
+                    color = if (isOpen) colors.statusEmerald else colors.statusCrimson,
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
@@ -349,6 +350,7 @@ fun DiagnosticChip(label: String, isOpen: Boolean, modifier: Modifier = Modifier
 
 @Composable
 fun QuotaRow(label: String, usage: String, resetIn: String) {
+    val colors = LocalGlyphColors.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -357,20 +359,20 @@ fun QuotaRow(label: String, usage: String, resetIn: String) {
         Column {
             Text(
                 text = label,
-                color = Color(0xFFE2E8F0),
+                color = colors.textPrimary,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace
             )
             Text(
                 text = resetIn,
-                color = Color(0xFF64748B),
-                fontSize = 9.sp,
+                color = colors.textMuted,
+                fontSize = 8.5.sp,
                 fontFamily = FontFamily.Monospace
             )
         }
         Text(
             text = usage,
-            color = Color(0xFF38BDF8),
+            color = colors.accentPrimary,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace
