@@ -22,17 +22,15 @@ class AgentActivity : ComponentActivity() {
             MaterialTheme(
                 colorScheme = darkColorScheme(
                     background = Color(0xFF07080A),
-                    surface = Color(0xFF0F1218),
+                    surface = Color(0xFF0C0E14),
                     primary = Color(0xFF38BDF8),
                     secondary = Color(0xFF0284C7),
+                    tertiary = Color(0xFF10B981),
                     onBackground = Color(0xFFF8FAFC),
                     onSurface = Color(0xFFF8FAFC)
                 )
             ) {
-                AntigravityAgentScreen(
-                    workspaceDir = filesDir.absolutePath,
-                    onClose = { finish() }
-                )
+                AntigravityMainWorkspace()
             }
         }
     }

@@ -7,9 +7,11 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.BufferedReader
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.Socket
 
@@ -66,13 +68,14 @@ class AgyDaemonManager(private val context: Context) {
     /**
      * Resolves and extracts native ARM64 binaries (agy and agy_ide_bridge) into app files.
      */
-    private fun ensureBinariesInstalled(): Pair<File?, File?> {
+    private suspend fun ensureBinariesInstalled(): Pair<File?, File?> = withContext(Dispatchers.IO) {
         val binDir = File(context.filesDir, "bin").apply { mkdirs() }
         val agyBin = File(binDir, "agy")
         val bridgeBin = File(binDir, "agy_ide_bridge")
 
         val agyCandidates = listOf(
             File("/storage/emulated/0/.antigravity_bin/agy"),
+            File(context.getExternalFilesDir(null), "bin/agy"),
             File("/storage/emulated/0/Download/agy"),
             File("/storage/emulated/0/CodeOnTheGoProjects/agy"),
             File("/data/user/0/ai.antigem/files/home/.local/bin/agy"),
@@ -81,17 +84,20 @@ class AgyDaemonManager(private val context: Context) {
 
         val bridgeCandidates = listOf(
             File("/storage/emulated/0/.antigravity_bin/agy_ide_bridge"),
+            File(context.getExternalFilesDir(null), "bin/agy_ide_bridge"),
             File("/storage/emulated/0/Download/agy_ide_bridge"),
             File("/data/user/0/ai.antigem/files/usr/bin/agy_ide_bridge")
         )
 
-        if (!agyBin.exists() || agyBin.length() == 0L) {
+        // Install agy binary if needed
+        if (!agyBin.exists() || agyBin.length() < 10_000_000L) {
             for (candidate in agyCandidates) {
-                if (candidate.exists() && candidate.length() > 0) {
+                if (candidate.exists() && candidate.length() > 10_000_000L) {
                     try {
+                        _statusMessage.value = "INSTALLING AGY ENGINE..."
+                        Log.i(TAG, "Copying agy binary from ${candidate.absolutePath} (${candidate.length() / 1024 / 1024} MB)")
                         copyFile(candidate, agyBin)
                         makeExecutable(agyBin)
-                        Log.i(TAG, "Copied agy binary from ${candidate.absolutePath}")
                         break
                     } catch (e: Exception) {
                         Log.w(TAG, "Could not copy ${candidate.absolutePath}: ${e.message}")
@@ -102,13 +108,15 @@ class AgyDaemonManager(private val context: Context) {
             makeExecutable(agyBin)
         }
 
-        if (!bridgeBin.exists() || bridgeBin.length() == 0L) {
+        // Install bridge binary if needed
+        if (!bridgeBin.exists() || bridgeBin.length() < 500_000L) {
             for (candidate in bridgeCandidates) {
-                if (candidate.exists() && candidate.length() > 0) {
+                if (candidate.exists() && candidate.length() > 500_000L) {
                     try {
+                        _statusMessage.value = "INSTALLING IDE BRIDGE..."
+                        Log.i(TAG, "Copying bridge binary from ${candidate.absolutePath} (${candidate.length() / 1024 / 1024} MB)")
                         copyFile(candidate, bridgeBin)
                         makeExecutable(bridgeBin)
-                        Log.i(TAG, "Copied bridge binary from ${candidate.absolutePath}")
                         break
                     } catch (e: Exception) {
                         Log.w(TAG, "Could not copy ${candidate.absolutePath}: ${e.message}")
@@ -119,18 +127,21 @@ class AgyDaemonManager(private val context: Context) {
             makeExecutable(bridgeBin)
         }
 
-        return Pair(
+        Pair(
             if (agyBin.exists() && agyBin.canExecute()) agyBin else null,
             if (bridgeBin.exists() && bridgeBin.canExecute()) bridgeBin else null
         )
     }
 
     private fun copyFile(src: File, dst: File) {
+        val tmp = File(dst.parentFile, "${dst.name}.tmp")
         FileInputStream(src).use { inStream ->
-            FileOutputStream(dst).use { outStream ->
-                inStream.copyTo(outStream)
+            FileOutputStream(tmp).use { outStream ->
+                inStream.copyTo(outStream, bufferSize = 65536)
             }
         }
+        if (dst.exists()) dst.delete()
+        tmp.renameTo(dst)
     }
 
     private fun makeExecutable(file: File) {
@@ -168,7 +179,7 @@ class AgyDaemonManager(private val context: Context) {
 
             if (bridgeBin == null || agyBin == null) {
                 _daemonState.value = DaemonState.ERROR
-                _statusMessage.value = "DAEMON OFFLINE · TAP TO START"
+                _statusMessage.value = "DAEMON OFFLINE · TAP TO RETRY"
                 return@launch
             }
 
@@ -194,6 +205,8 @@ class AgyDaemonManager(private val context: Context) {
 
             try {
                 Log.d(TAG, "Spawning daemon: ${cmd.joinToString(" ")}")
+                _statusMessage.value = "SPAWNING AGY DAEMON..."
+
                 val pb = ProcessBuilder(cmd)
                 pb.directory(context.filesDir)
                 pb.environment()["HOME"] = File(context.filesDir, "home").apply { mkdirs() }.absolutePath
@@ -202,8 +215,21 @@ class AgyDaemonManager(private val context: Context) {
 
                 bridgeProcess = pb.start()
 
+                // Read startup logs in background for diagnostics
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        BufferedReader(InputStreamReader(bridgeProcess?.inputStream ?: return@launch)).use { reader ->
+                            var line = reader.readLine()
+                            while (line != null) {
+                                Log.d(TAG, "[daemon] $line")
+                                line = reader.readLine()
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+
                 var online = false
-                for (i in 1..25) {
+                for (i in 1..30) {
                     delay(500)
                     if (isPortOpen(DEFAULT_HUB_PORT, 500)) {
                         online = true

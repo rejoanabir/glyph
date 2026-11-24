@@ -66,21 +66,8 @@ android {
             abiFilters += listOf("arm64-v8a")
         }
 
-        externalNativeBuild {
-            cmake {
-                cppFlags += listOf("-O3", "-std=c++17")
-            }
-        }
-
         vectorDrawables {
             useSupportLibrary = true
-        }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
         }
     }
 
