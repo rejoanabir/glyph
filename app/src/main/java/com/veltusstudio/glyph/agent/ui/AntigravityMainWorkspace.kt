@@ -90,7 +90,7 @@ fun AntigravityMainWorkspace(
                     daemonManager.startOrConnectDaemon(newPath)
                 },
                 onNewSession = {
-                    chatService.resetConversation()
+                    chatService.newSession()
                     activeTab = AntigravityTab.WORKBENCH
                 },
                 daemonManager = daemonManager,
@@ -184,7 +184,7 @@ fun AntigravityMainWorkspace(
                         actions = {
                             IconButton(
                                 onClick = {
-                                    chatService.resetConversation()
+                                    chatService.newSession()
                                     activeTab = AntigravityTab.WORKBENCH
                                 },
                                 modifier = Modifier.size(36.dp)

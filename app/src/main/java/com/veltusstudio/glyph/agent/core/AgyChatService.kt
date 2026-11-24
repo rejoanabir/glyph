@@ -89,6 +89,8 @@ class AgyChatService private constructor() {
         _agentStatus.value = AgentStatus.IDLE
     }
 
+    fun resetConversation() = newSession()
+
     /**
      * Cancels active generator run or tool execution.
      */
