@@ -177,15 +177,16 @@ class AgyCsrfManager private constructor() {
 
     /**
      * Obtains a valid CSRF token through multi-source cascading resolution.
+     * Always probes live Hub and Bridge endpoints before falling back to cached tokens.
      */
     fun getEffectiveCsrfToken(): String {
-        var token = hubCsrfToken
-        if (token.isNotBlank()) return token
+        val liveToken = refreshFromHubHtml()
+        if (liveToken.isNotBlank()) return liveToken
 
-        token = refreshFromHubHtml()
-        if (token.isNotBlank()) return token
+        val bridgeToken = refreshFromBridge()
+        if (bridgeToken.isNotBlank()) return bridgeToken
 
-        token = refreshFromBridge()
+        val token = hubCsrfToken
         if (token.isNotBlank()) return token
 
         val sharedFile = File("/storage/emulated/0/.antigravity_bin/hub_csrf_token.txt")
@@ -200,6 +201,11 @@ class AgyCsrfManager private constructor() {
         }
 
         return ""
+    }
+
+    fun clearTokens() {
+        _hubCsrfToken.value = ""
+        Log.d(TAG, "Cleared cached CSRF tokens")
     }
 
     fun notifyCsrfExpired(endpoint: String = "", usedToken: String? = null) {

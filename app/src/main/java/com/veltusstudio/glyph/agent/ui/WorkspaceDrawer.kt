@@ -616,20 +616,21 @@ fun WorkspaceDrawer(
                                 .size(7.dp)
                                 .clip(CircleShape)
                                 .background(
-                                    when (daemonState) {
-                                        DaemonState.RUNNING -> colors.statusEmerald
-                                        DaemonState.STARTING -> colors.statusAmber
-                                        else -> colors.statusCrimson
+                                    when {
+                                        daemonState == DaemonState.RUNNING -> colors.statusEmerald
+                                        daemonState == DaemonState.STARTING -> colors.statusAmber
+                                        authState.engineMode == com.veltusstudio.glyph.agent.core.EngineMode.CLOUD_DIRECT || authState.apiKey.isNotBlank() -> colors.accentPrimary
+                                        else -> colors.statusAmber
                                     }
                                 )
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = when (daemonState) {
-                                DaemonState.RUNNING -> "ACTIVE (HUB :1237)"
-                                DaemonState.STARTING -> "STARTING..."
-                                DaemonState.ERROR -> "OFFLINE / ERROR"
-                                DaemonState.STOPPED -> "STOPPED"
+                            text = when {
+                                daemonState == DaemonState.RUNNING -> "ACTIVE (HUB :1237)"
+                                daemonState == DaemonState.STARTING -> "STARTING..."
+                                authState.engineMode == com.veltusstudio.glyph.agent.core.EngineMode.CLOUD_DIRECT -> "GEMINI CLOUD DIRECT"
+                                else -> "GEMINI CLOUD (STANDALONE)"
                             },
                             color = colors.textSecondary,
                             fontSize = 8.5.sp,

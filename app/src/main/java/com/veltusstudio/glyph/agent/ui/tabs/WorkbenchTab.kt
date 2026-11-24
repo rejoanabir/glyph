@@ -27,14 +27,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.veltusstudio.glyph.agent.core.AgyChatService
+import com.veltusstudio.glyph.agent.core.GlyphAuthManager
 import com.veltusstudio.glyph.agent.daemon.AgyDaemonManager
 import com.veltusstudio.glyph.agent.daemon.DaemonState
 import com.veltusstudio.glyph.agent.model.*
 import com.veltusstudio.glyph.agent.ui.*
+import com.veltusstudio.glyph.agent.ui.dialogs.HubSetupDialog
 import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
 
 @Composable
@@ -46,6 +49,8 @@ fun WorkbenchTab(
 ) {
     val context = LocalContext.current
     val colors = LocalGlyphColors.current
+    val authManager = remember { GlyphAuthManager.getInstance(context) }
+    val authState by authManager.authState.collectAsState()
     val daemonState by daemonManager.daemonState.collectAsState()
     val messages by chatService.messages.collectAsState()
     val agentStatus by chatService.agentStatus.collectAsState()
@@ -54,7 +59,20 @@ fun WorkbenchTab(
     val pendingQuestion by chatService.pendingQuestion.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
+    var showHubDialog by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+
+    LaunchedEffect(Unit) {
+        chatService.initialize(context)
+    }
+
+    if (showHubDialog) {
+        HubSetupDialog(
+            onDismissRequest = { showHubDialog = false },
+            onNavigateAuth = { showHubDialog = false },
+            workspaceDir = workspaceDir
+        )
+    }
 
     LaunchedEffect(messages.size, liveThinking) {
         if (messages.isNotEmpty()) {
@@ -67,96 +85,128 @@ fun WorkbenchTab(
             .fillMaxSize()
             .background(colors.bgObsidian)
     ) {
-        // Disconnected warning banner
-        if (daemonState != DaemonState.RUNNING) {
-            val isStarting = daemonState == DaemonState.STARTING
-            val needsStorage = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()
-
-            val bannerColor = if (isStarting) colors.accentPrimary else if (needsStorage) colors.statusAmber else colors.statusCrimson
-            val bannerTitle = if (isStarting) "CONNECTING TO GLYPH HUB" else if (needsStorage) "STORAGE PERMISSION REQUIRED" else "HUB CONNECTION REQUIRED"
-            val bannerSubtitle = if (isStarting) "Probing port :1237 loopback..." else if (needsStorage) "All Files access needed for project worktrees & engine." else "Port 1237 offline. Tap to connect or start daemon."
-            val buttonText = if (isStarting) "WAIT..." else if (needsStorage) "GRANT" else "CONNECT"
-
+        // Storage Permission Warning Banner (if required)
+        val needsStorage = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()
+        if (needsStorage) {
             Surface(
                 shape = RoundedCornerShape(4.dp),
-                color = bannerColor.copy(alpha = 0.12f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, bannerColor.copy(alpha = 0.5f)),
+                color = colors.statusAmber.copy(alpha = 0.12f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.statusAmber.copy(alpha = 0.5f)),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
                     .clickable {
-                        if (needsStorage) {
-                            try {
-                                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                                    data = Uri.parse("package:${context.packageName}")
-                                }
-                                context.startActivity(intent)
-                            } catch (_: Exception) {
-                                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                                context.startActivity(intent)
+                        try {
+                            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                data = Uri.parse("package:${context.packageName}")
                             }
-                        } else {
-                            daemonManager.startOrConnectDaemon(workspaceDir)
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                            context.startActivity(intent)
                         }
                     }
             ) {
                 Row(
-                    modifier = Modifier.padding(10.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = bannerTitle,
-                            color = bannerColor,
-                            fontSize = 10.5.sp,
+                            text = "STORAGE PERMISSION REQUIRED",
+                            color = colors.statusAmber,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
-                            text = bannerSubtitle,
+                            text = "All Files access needed for project worktrees & local files.",
                             color = colors.textSecondary,
-                            fontSize = 9.5.sp,
+                            fontSize = 8.5.sp,
                             fontFamily = FontFamily.Monospace
                         )
                     }
-
-                    if (isStarting) {
-                        CircularProgressIndicator(
-                            color = bannerColor,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(16.dp)
+                    Surface(
+                        shape = RoundedCornerShape(3.dp),
+                        color = colors.statusAmber
+                    ) {
+                        Text(
+                            text = "GRANT",
+                            color = Color.Black,
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
-                    } else {
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = bannerColor,
-                            modifier = Modifier.clickable {
-                                if (needsStorage) {
-                                    try {
-                                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                                            data = Uri.parse("package:${context.packageName}")
-                                        }
-                                        context.startActivity(intent)
-                                    } catch (_: Exception) {
-                                        val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                                        context.startActivity(intent)
-                                    }
-                                } else {
-                                    daemonManager.startOrConnectDaemon(workspaceDir)
-                                }
-                            }
-                        ) {
-                            Text(
-                                text = buttonText,
-                                color = Color.White,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
                     }
+                }
+            }
+        }
+
+        // Active Engine Status Strip (Never blocks the user)
+        val isHubRunning = daemonState == DaemonState.RUNNING
+        val isStarting = daemonState == DaemonState.STARTING
+        val stripColor = if (isHubRunning) colors.statusEmerald else if (isStarting) colors.statusAmber else colors.accentPrimary
+        val stripTitle = if (isHubRunning) "[ ENGINE: ANTIGRAVITY HUB (:1237) ]" else if (isStarting) "[ ENGINE: PROBING HUB (:1237) ]" else "[ ENGINE: GEMINI CLOUD DIRECT ]"
+        val stripSubtitle = if (isHubRunning) "Native daemon active over port 1237 loopback." else if (isStarting) "Connecting to local port :1237..." else "Autonomous mode active. Tap to configure Hub or Termux."
+        val stripAction = if (isHubRunning) "DETAILS" else if (isStarting) "WAIT..." else "SETUP"
+
+        Surface(
+            shape = RoundedCornerShape(4.dp),
+            color = stripColor.copy(alpha = 0.08f),
+            border = androidx.compose.foundation.BorderStroke(1.dp, stripColor.copy(alpha = 0.35f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .clickable { showHubDialog = true }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(stripColor)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = stripTitle,
+                            color = stripColor,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = stripSubtitle,
+                            color = colors.textSecondary,
+                            fontSize = 8.5.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(3.dp),
+                    color = stripColor.copy(alpha = 0.2f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, stripColor.copy(alpha = 0.5f))
+                ) {
+                    Text(
+                        text = stripAction,
+                        color = stripColor,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
                 }
             }
         }
@@ -188,7 +238,7 @@ fun WorkbenchTab(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Antigravity engine connected locally over port 1237. Select an action or write an instruction below.",
+                            text = "Antigravity engine & Gemini Cloud Direct active. Select an action or write an instruction below.",
                             color = colors.textMuted,
                             fontSize = 10.5.sp,
                             lineHeight = 15.sp,
@@ -212,9 +262,6 @@ fun WorkbenchTab(
                                     .fillMaxWidth()
                                     .padding(vertical = 3.dp)
                                     .clickable {
-                                        if (daemonState != DaemonState.RUNNING) {
-                                            daemonManager.startOrConnectDaemon(workspaceDir)
-                                        }
                                         chatService.sendPrompt(prompt, workspaceDir)
                                     }
                             ) {
@@ -314,13 +361,25 @@ fun WorkbenchTab(
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
-                        Text(
-                            text = "GEMINI 2.5 FLASH",
-                            color = colors.accentPrimary,
-                            fontSize = 8.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(3.dp),
+                            color = colors.accentGlow,
+                            modifier = Modifier.clickable {
+                                val models = listOf("GEMINI 2.5 FLASH", "GEMINI 3.8 FLASH", "GEMINI 2.5 PRO")
+                                val currentIndex = models.indexOf(authState.selectedModel).let { if (it < 0) 0 else it }
+                                val nextModel = models[(currentIndex + 1) % models.size]
+                                authManager.setSelectedModel(nextModel)
+                            }
+                        ) {
+                            Text(
+                                text = authState.selectedModel,
+                                color = colors.accentPrimary,
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -380,9 +439,6 @@ fun WorkbenchTab(
                                     if (inputText.isNotBlank()) {
                                         val text = inputText
                                         inputText = ""
-                                        if (daemonState != DaemonState.RUNNING) {
-                                            daemonManager.startOrConnectDaemon(workspaceDir)
-                                        }
                                         chatService.sendPrompt(text, workspaceDir)
                                     }
                                 },

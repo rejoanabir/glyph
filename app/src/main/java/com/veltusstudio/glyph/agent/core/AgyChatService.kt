@@ -59,6 +59,14 @@ class AgyChatService private constructor() {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    private var authManager: GlyphAuthManager? = null
+    private var daemonManager: AgyDaemonManager? = null
+
+    fun initialize(context: android.content.Context) {
+        authManager = GlyphAuthManager.getInstance(context)
+        daemonManager = AgyDaemonManager.getInstance(context)
+    }
+
     private val _messages = MutableStateFlow<List<AgentMessage>>(emptyList())
     val messages: StateFlow<List<AgentMessage>> = _messages.asStateFlow()
 
@@ -114,7 +122,7 @@ class AgyChatService private constructor() {
     }
 
     /**
-     * Sends a user prompt to the Antigravity agent.
+     * Sends a user prompt to the Antigravity agent or autonomous Gemini direct cloud.
      */
     fun sendPrompt(promptText: String, workspaceDir: String) {
         if (promptText.isBlank()) return
@@ -128,8 +136,26 @@ class AgyChatService private constructor() {
         _agentStatus.value = AgentStatus.THINKING
         _currentThinking.value = "Analyzing workspace and planning execution..."
 
+        val engineMode = authManager?.authState?.value?.engineMode ?: EngineMode.AUTO
+        val hubRunning = daemonManager?.daemonState?.value == DaemonState.RUNNING ||
+                (daemonManager?.isPortOpen(AgyDaemonManager.DEFAULT_HUB_PORT, 300) == true)
+
         streamingJob?.cancel()
         streamingJob = scope.launch {
+            // Case 1: Pure Cloud Direct mode explicitly chosen
+            if (engineMode == EngineMode.CLOUD_DIRECT) {
+                runGeminiDirect(promptText, workspaceDir)
+                return@launch
+            }
+
+            // Case 2: Auto mode, but Hub is not currently running
+            if (engineMode == EngineMode.AUTO && !hubRunning) {
+                Log.i(TAG, "Hub port 1237 is offline, routing prompt to Gemini Cloud Direct Engine")
+                runGeminiDirect(promptText, workspaceDir)
+                return@launch
+            }
+
+            // Case 3: Hub mode or Auto with Hub detected online -> attempt gRPC to Hub
             try {
                 // Ensure Hub CSRF token is available
                 AgyCsrfManager.instance.getEffectiveCsrfToken()
@@ -148,6 +174,7 @@ class AgyChatService private constructor() {
                     var startRes = AgyLanguageServiceHolder.service.StartCascade().executeSafely(startReq)
                     if (startRes.isFailure) {
                         Log.w(TAG, "StartCascade initial attempt failed, re-fetching CSRF and retrying once...")
+                        AgyCsrfManager.instance.clearTokens()
                         AgyCsrfManager.instance.refreshFromHubHtml()
                         AgyCsrfManager.instance.refreshFromBridge()
                         startRes = AgyLanguageServiceHolder.service.StartCascade().executeSafely(startReq)
@@ -197,6 +224,7 @@ class AgyChatService private constructor() {
                 var sendRes = AgyLanguageServiceHolder.service.SendUserCascadeMessage().executeSafely(sendReq)
                 if (sendRes.isFailure) {
                     Log.w(TAG, "SendUserCascadeMessage initial attempt failed, re-fetching CSRF and retrying once...")
+                    AgyCsrfManager.instance.clearTokens()
                     AgyCsrfManager.instance.refreshFromHubHtml()
                     AgyCsrfManager.instance.refreshFromBridge()
                     sendRes = AgyLanguageServiceHolder.service.SendUserCascadeMessage().executeSafely(sendReq)
@@ -204,13 +232,21 @@ class AgyChatService private constructor() {
 
                 if (sendRes.isFailure) {
                     val err = sendRes.exceptionOrNull()?.message ?: "Daemon communication failed"
-                    _agentStatus.value = AgentStatus.ERROR
-                    _currentThinking.value = null
-                    _messages.value = _messages.value + AgentMessage(
-                        id = UUID.randomUUID().toString(),
-                        role = Role.ASSISTANT,
-                        text = "[Error] Failed to reach Antigravity daemon: $err"
-                    )
+                    Log.w(TAG, "Hub RPC failed: $err")
+                    AgyCsrfManager.instance.clearTokens()
+
+                    if (engineMode == EngineMode.AUTO) {
+                        Log.i(TAG, "Failing over to Gemini Direct Cloud Engine due to: $err")
+                        runGeminiDirect(promptText, workspaceDir, "Antigravity Hub unreachable ($err)")
+                    } else {
+                        _agentStatus.value = AgentStatus.ERROR
+                        _currentThinking.value = null
+                        _messages.value = _messages.value + AgentMessage(
+                            id = UUID.randomUUID().toString(),
+                            role = Role.ASSISTANT,
+                            text = "[Error] Failed to reach Antigravity daemon: $err\n\nRun in Termux: test_bridge -f -p 1236 --hub-port 1237\nOr switch Engine Mode to 'GEMINI CLOUD DIRECT' in Hub Setup."
+                        )
+                    }
                     return@launch
                 }
 
@@ -227,14 +263,81 @@ class AgyChatService private constructor() {
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "Error in agent communication loop", e)
-                _agentStatus.value = AgentStatus.ERROR
-                _currentThinking.value = null
-                _messages.value = _messages.value + AgentMessage(
-                    id = UUID.randomUUID().toString(),
-                    role = Role.ASSISTANT,
-                    text = "[Error] Failed to reach Antigravity daemon: ${e.localizedMessage ?: e.message}"
-                )
+                Log.e(TAG, "Exception during Hub communication: ${e.message}", e)
+                AgyCsrfManager.instance.clearTokens()
+
+                if (engineMode == EngineMode.AUTO) {
+                    Log.i(TAG, "Failing over to Gemini Direct Cloud Engine after exception: ${e.message}")
+                    runGeminiDirect(promptText, workspaceDir, "Hub connection reset (${e.localizedMessage ?: e.message})")
+                } else {
+                    _agentStatus.value = AgentStatus.ERROR
+                    _currentThinking.value = null
+                    _messages.value = _messages.value + AgentMessage(
+                        id = UUID.randomUUID().toString(),
+                        role = Role.ASSISTANT,
+                        text = "[Error] Failed to reach Antigravity daemon: ${e.localizedMessage ?: e.message}\n\nRun in Termux: test_bridge -f -p 1236 --hub-port 1237\nOr switch Engine Mode to 'GEMINI CLOUD DIRECT' in Hub Setup."
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Executes prompt via GeminiDirectService with live streaming.
+     */
+    private suspend fun runGeminiDirect(
+        promptText: String,
+        workspaceDir: String,
+        fallbackNotice: String? = null
+    ) {
+        val apiKey = authManager?.authState?.value?.apiKey ?: ""
+        val model = authManager?.authState?.value?.selectedModel ?: GeminiDirectService.DEFAULT_MODEL
+
+        _agentStatus.value = AgentStatus.THINKING
+        _currentThinking.value = if (fallbackNotice != null) {
+            "Failing over to Gemini Cloud ($fallbackNotice)..."
+        } else {
+            "Autonomous Gemini Cloud Engine processing prompt..."
+        }
+
+        val assistantMsgId = UUID.randomUUID().toString()
+        var fullAssistantText = ""
+
+        val assistantMsg = AgentMessage(
+            id = assistantMsgId,
+            role = Role.ASSISTANT,
+            text = fullAssistantText
+        )
+        _messages.value = _messages.value + assistantMsg
+
+        val res = GeminiDirectService.instance.streamGenerate(
+            prompt = promptText,
+            workspaceDir = workspaceDir,
+            modelName = model,
+            apiKey = apiKey,
+            onThought = { thought ->
+                _currentThinking.value = thought
+            },
+            onChunk = { chunk ->
+                fullAssistantText += chunk
+                _messages.value = _messages.value.map { msg ->
+                    if (msg.id == assistantMsgId) {
+                        msg.copy(text = fullAssistantText)
+                    } else msg
+                }
+            }
+        )
+
+        _agentStatus.value = AgentStatus.IDLE
+        _currentThinking.value = null
+
+        if (res.isFailure) {
+            val err = res.exceptionOrNull()?.message ?: "Unknown error"
+            _agentStatus.value = AgentStatus.ERROR
+            _messages.value = _messages.value.map { msg ->
+                if (msg.id == assistantMsgId && fullAssistantText.isBlank()) {
+                    msg.copy(text = "[Error] Gemini Cloud request failed: $err")
+                } else msg
             }
         }
     }

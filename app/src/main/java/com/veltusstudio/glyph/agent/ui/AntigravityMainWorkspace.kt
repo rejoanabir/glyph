@@ -43,6 +43,9 @@ enum class AntigravityTab(val label: String) {
     HUB("HUB")
 }
 
+import com.veltusstudio.glyph.agent.core.EngineMode
+import com.veltusstudio.glyph.agent.ui.dialogs.HubSetupDialog
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AntigravityMainWorkspace(
@@ -55,7 +58,7 @@ fun AntigravityMainWorkspace(
     val colors = LocalGlyphColors.current
 
     val daemonManager = remember { AgyDaemonManager.getInstance(context) }
-    val chatService = remember { AgyChatService.instance }
+    val chatService = remember { AgyChatService.instance.apply { initialize(context) } }
     val authManager = remember { GlyphAuthManager.getInstance(context) }
     val daemonState by daemonManager.daemonState.collectAsState()
     val statusMsg by daemonManager.statusMessage.collectAsState()
@@ -64,6 +67,7 @@ fun AntigravityMainWorkspace(
     var activeScreen by remember { mutableStateOf("ide") }
     var activeTab by remember { mutableStateOf(AntigravityTab.WORKBENCH) }
     var hubSubTab by remember { mutableStateOf(HubSubTab.RUNTIME) }
+    var showHubDialog by remember { mutableStateOf(false) }
 
     // Resolve default workspace directory
     var currentWorkspace by remember {
@@ -153,9 +157,7 @@ fun AntigravityMainWorkspace(
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.clickable {
-                                            if (daemonState != DaemonState.RUNNING) {
-                                                daemonManager.startOrConnectDaemon(currentWorkspace)
-                                            }
+                                            showHubDialog = true
                                         }
                                     ) {
                                         // Original Brushed Silver Glyph Logo
@@ -189,10 +191,11 @@ fun AntigravityMainWorkspace(
                                         Spacer(modifier = Modifier.width(8.dp))
 
                                         // Glowing Radar Indicator
-                                        val dotColor = when (daemonState) {
-                                            DaemonState.RUNNING -> colors.statusEmerald
-                                            DaemonState.STARTING -> colors.statusAmber
-                                            else -> colors.statusCrimson
+                                        val dotColor = when {
+                                            daemonState == DaemonState.RUNNING -> colors.statusEmerald
+                                            daemonState == DaemonState.STARTING -> colors.statusAmber
+                                            authState.engineMode == EngineMode.CLOUD_DIRECT || authState.apiKey.isNotBlank() -> colors.accentPrimary
+                                            else -> colors.statusAmber
                                         }
 
                                         Box(
@@ -416,6 +419,17 @@ fun AntigravityMainWorkspace(
                                 )
                             }
                         }
+                    }
+
+                    if (showHubDialog) {
+                        HubSetupDialog(
+                            onDismissRequest = { showHubDialog = false },
+                            onNavigateAuth = {
+                                showHubDialog = false
+                                activeScreen = "auth"
+                            },
+                            workspaceDir = currentWorkspace
+                        )
                     }
                 }
             }

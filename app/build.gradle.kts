@@ -59,8 +59,8 @@ android {
         applicationId = "com.veltusstudio.glyph"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "2.3"
+        versionCode = 4
+        versionName = "2.4"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

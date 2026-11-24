@@ -13,6 +13,12 @@ enum class AuthMethod(val label: String) {
     GUEST("LOCAL GUEST")
 }
 
+enum class EngineMode(val label: String) {
+    AUTO("AUTO (HUB / CLOUD)"),
+    HUB_ONLY("HUB (:1237)"),
+    CLOUD_DIRECT("GEMINI CLOUD DIRECT")
+}
+
 data class GlyphAuthState(
     val isLoggedIn: Boolean = true,
     val authMethod: AuthMethod = AuthMethod.GOOGLE,
@@ -20,7 +26,9 @@ data class GlyphAuthState(
     val displayName: String = "Glyph Developer",
     val apiKey: String = "",
     val hubEndpoint: String = "127.0.0.1:1237",
-    val tier: String = "PRO DEVELOPER"
+    val tier: String = "PRO DEVELOPER",
+    val engineMode: EngineMode = EngineMode.AUTO,
+    val selectedModel: String = "GEMINI 2.5 FLASH"
 ) {
     val avatarLetter: String
         get() = when {
@@ -41,6 +49,8 @@ class GlyphAuthManager private constructor(context: Context) {
         private const val KEY_API_KEY = "key_api_key"
         private const val KEY_HUB_ENDPOINT = "key_hub_endpoint"
         private const val KEY_TIER = "key_tier"
+        private const val KEY_ENGINE_MODE = "key_engine_mode"
+        private const val KEY_SELECTED_MODEL = "key_selected_model"
 
         @Volatile
         private var instance: GlyphAuthManager? = null
@@ -66,6 +76,9 @@ class GlyphAuthManager private constructor(context: Context) {
         val apiKey = prefs.getString(KEY_API_KEY, "") ?: ""
         val endpoint = prefs.getString(KEY_HUB_ENDPOINT, "127.0.0.1:1237") ?: "127.0.0.1:1237"
         val tier = prefs.getString(KEY_TIER, "PRO DEVELOPER") ?: "PRO DEVELOPER"
+        val modeStr = prefs.getString(KEY_ENGINE_MODE, EngineMode.AUTO.name) ?: EngineMode.AUTO.name
+        val engineMode = try { EngineMode.valueOf(modeStr) } catch (_: Exception) { EngineMode.AUTO }
+        val model = prefs.getString(KEY_SELECTED_MODEL, "GEMINI 2.5 FLASH") ?: "GEMINI 2.5 FLASH"
 
         return GlyphAuthState(
             isLoggedIn = isLoggedIn,
@@ -74,15 +87,27 @@ class GlyphAuthManager private constructor(context: Context) {
             displayName = name,
             apiKey = apiKey,
             hubEndpoint = endpoint,
-            tier = tier
+            tier = tier,
+            engineMode = engineMode,
+            selectedModel = model
         )
+    }
+
+    fun setEngineMode(mode: EngineMode) {
+        val updated = _authState.value.copy(engineMode = mode)
+        saveState(updated)
+    }
+
+    fun setSelectedModel(model: String) {
+        val updated = _authState.value.copy(selectedModel = model)
+        saveState(updated)
     }
 
     fun loginWithGoogle(
         email: String = "developer@glyph.ai",
         name: String = "Glyph Developer"
     ) {
-        val newState = GlyphAuthState(
+        val newState = _authState.value.copy(
             isLoggedIn = true,
             authMethod = AuthMethod.GOOGLE,
             userEmail = email,
@@ -98,7 +123,7 @@ class GlyphAuthManager private constructor(context: Context) {
     ) {
         val cleanKey = key.trim()
         val masked = if (cleanKey.length > 8) "${cleanKey.take(6)}...${cleanKey.takeLast(4)}" else cleanKey
-        val newState = GlyphAuthState(
+        val newState = _authState.value.copy(
             isLoggedIn = true,
             authMethod = AuthMethod.API_KEY,
             userEmail = "$provider Key Active ($masked)",
@@ -114,7 +139,7 @@ class GlyphAuthManager private constructor(context: Context) {
         csrfToken: String = ""
     ) {
         val cleanEndpoint = endpoint.trim().ifBlank { "127.0.0.1:1237" }
-        val newState = GlyphAuthState(
+        val newState = _authState.value.copy(
             isLoggedIn = true,
             authMethod = AuthMethod.SELF_HOSTED,
             userEmail = "node@$cleanEndpoint",
@@ -129,7 +154,7 @@ class GlyphAuthManager private constructor(context: Context) {
     }
 
     fun logout() {
-        val guestState = GlyphAuthState(
+        val guestState = _authState.value.copy(
             isLoggedIn = false,
             authMethod = AuthMethod.GUEST,
             userEmail = "offline@glyph.local",
@@ -140,7 +165,6 @@ class GlyphAuthManager private constructor(context: Context) {
     }
 
     private fun saveState(state: GlyphAuthState) {
-        _authState.value = state
         prefs.edit()
             .putBoolean(KEY_LOGGED_IN, state.isLoggedIn)
             .putString(KEY_AUTH_METHOD, state.authMethod.name)
@@ -149,6 +173,10 @@ class GlyphAuthManager private constructor(context: Context) {
             .putString(KEY_API_KEY, state.apiKey)
             .putString(KEY_HUB_ENDPOINT, state.hubEndpoint)
             .putString(KEY_TIER, state.tier)
+            .putString(KEY_ENGINE_MODE, state.engineMode.name)
+            .putString(KEY_SELECTED_MODEL, state.selectedModel)
             .apply()
+
+        _authState.value = state
     }
 }
