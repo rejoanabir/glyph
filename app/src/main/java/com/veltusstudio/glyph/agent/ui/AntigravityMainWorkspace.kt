@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.veltusstudio.glyph.R
 import com.veltusstudio.glyph.agent.core.AgyChatService
+import com.veltusstudio.glyph.agent.core.GlyphAuthManager
 import com.veltusstudio.glyph.agent.daemon.AgyDaemonManager
 import com.veltusstudio.glyph.agent.daemon.DaemonState
 import com.veltusstudio.glyph.agent.ui.screens.*
@@ -54,11 +56,14 @@ fun AntigravityMainWorkspace(
 
     val daemonManager = remember { AgyDaemonManager.getInstance(context) }
     val chatService = remember { AgyChatService.instance }
+    val authManager = remember { GlyphAuthManager.getInstance(context) }
     val daemonState by daemonManager.daemonState.collectAsState()
     val statusMsg by daemonManager.statusMessage.collectAsState()
+    val authState by authManager.authState.collectAsState()
 
     var activeScreen by remember { mutableStateOf("ide") }
     var activeTab by remember { mutableStateOf(AntigravityTab.WORKBENCH) }
+    var hubSubTab by remember { mutableStateOf(HubSubTab.RUNTIME) }
 
     // Resolve default workspace directory
     var currentWorkspace by remember {
@@ -101,7 +106,10 @@ fun AntigravityMainWorkspace(
     when (activeScreen) {
         "boot" -> BootScreen(onBootComplete = { activeScreen = "ide" })
         "onboard" -> OnboardingScreen(onDone = { activeScreen = "ide" })
-        "auth" -> AuthScreen(onProceed = { activeScreen = "perms" })
+        "auth" -> AuthScreen(
+            onProceed = { activeScreen = "ide" },
+            onBackToIde = { activeScreen = "ide" }
+        )
         "perms" -> PermissionsScreen(onProceed = { activeScreen = "daemon" })
         "daemon" -> EngineSetupScreen(onComplete = { activeScreen = "ide" })
         else -> {
@@ -121,6 +129,10 @@ fun AntigravityMainWorkspace(
                         },
                         onNavigateScreen = { targetScreen ->
                             activeScreen = targetScreen
+                        },
+                        onOpenHubSubTab = { targetSubTab ->
+                            hubSubTab = targetSubTab
+                            activeTab = AntigravityTab.HUB
                         },
                         daemonManager = daemonManager,
                         onCloseDrawer = { coroutineScope.launch { drawerState.close() } }
@@ -239,6 +251,27 @@ fun AntigravityMainWorkspace(
                                     }
                                 },
                                 actions = {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = colors.accentGlow,
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.accentPrimary),
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clickable { activeScreen = "auth" }
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = authState.avatarLetter,
+                                                color = colors.accentPrimary,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(4.dp))
+
                                     IconButton(
                                         onClick = {
                                             chatService.newSession()
@@ -273,51 +306,64 @@ fun AntigravityMainWorkspace(
                         }
                     },
                     bottomBar = {
-                        Surface(
-                            color = colors.surfaceGlass,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
-                            modifier = Modifier.fillMaxWidth()
+                        val density = LocalDensity.current
+                        val imeBottom = WindowInsets.ime.getBottom(density)
+                        val isKeyboardVisible = imeBottom > 0
+
+                        AnimatedVisibility(
+                            visible = !isKeyboardVisible,
+                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
                         ) {
-                            NavigationBar(
-                                containerColor = Color.Transparent,
-                                tonalElevation = 0.dp,
-                                modifier = Modifier.height(56.dp)
+                            Surface(
+                                color = colors.surfaceGlass,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .navigationBarsPadding()
                             ) {
-                                AntigravityTab.values().forEach { tab ->
-                                    val isSelected = activeTab == tab
-                                    NavigationBarItem(
-                                        selected = isSelected,
-                                        onClick = { activeTab = tab },
-                                        icon = {
-                                            val icon = when (tab) {
-                                                AntigravityTab.WORKBENCH -> Icons.Default.SmartToy
-                                                AntigravityTab.EXPLORER -> Icons.Default.Folder
-                                                AntigravityTab.TERMINAL -> Icons.Default.Code
-                                                AntigravityTab.DIFFS -> Icons.Default.Difference
-                                                AntigravityTab.HUB -> Icons.Default.Tune
-                                            }
-                                            Icon(
-                                                imageVector = icon,
-                                                contentDescription = tab.label,
-                                                modifier = Modifier.size(18.dp)
+                                NavigationBar(
+                                    containerColor = Color.Transparent,
+                                    tonalElevation = 0.dp,
+                                    windowInsets = WindowInsets(0, 0, 0, 0),
+                                    modifier = Modifier.height(56.dp)
+                                ) {
+                                    AntigravityTab.values().forEach { tab ->
+                                        val isSelected = activeTab == tab
+                                        NavigationBarItem(
+                                            selected = isSelected,
+                                            onClick = { activeTab = tab },
+                                            icon = {
+                                                val icon = when (tab) {
+                                                    AntigravityTab.WORKBENCH -> Icons.Default.SmartToy
+                                                    AntigravityTab.EXPLORER -> Icons.Default.Folder
+                                                    AntigravityTab.TERMINAL -> Icons.Default.Code
+                                                    AntigravityTab.DIFFS -> Icons.Default.Difference
+                                                    AntigravityTab.HUB -> Icons.Default.Tune
+                                                }
+                                                Icon(
+                                                    imageVector = icon,
+                                                    contentDescription = tab.label,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            },
+                                            label = {
+                                                Text(
+                                                    text = tab.label,
+                                                    fontSize = 8.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                            },
+                                            colors = NavigationBarItemDefaults.colors(
+                                                selectedIconColor = colors.accentPrimary,
+                                                selectedTextColor = colors.accentPrimary,
+                                                unselectedIconColor = colors.textMuted,
+                                                unselectedTextColor = colors.textMuted,
+                                                indicatorColor = colors.accentGlow
                                             )
-                                        },
-                                        label = {
-                                            Text(
-                                                text = tab.label,
-                                                fontSize = 8.sp,
-                                                fontFamily = FontFamily.Monospace,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                            )
-                                        },
-                                        colors = NavigationBarItemDefaults.colors(
-                                            selectedIconColor = colors.accentPrimary,
-                                            selectedTextColor = colors.accentPrimary,
-                                            unselectedIconColor = colors.textMuted,
-                                            unselectedTextColor = colors.textMuted,
-                                            indicatorColor = colors.accentGlow
                                         )
-                                    )
+                                    }
                                 }
                             }
                         }
@@ -361,7 +407,12 @@ fun AntigravityMainWorkspace(
                                 )
                                 AntigravityTab.HUB -> HubTab(
                                     daemonManager = daemonManager,
-                                    workspaceDir = currentWorkspace
+                                    workspaceDir = currentWorkspace,
+                                    initialSubTab = hubSubTab,
+                                    onRunSkillInWorkbench = { prompt ->
+                                        chatService.sendPrompt(prompt, currentWorkspace)
+                                        activeTab = AntigravityTab.WORKBENCH
+                                    }
                                 )
                             }
                         }

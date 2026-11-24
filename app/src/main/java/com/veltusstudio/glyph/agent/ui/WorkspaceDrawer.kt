@@ -30,8 +30,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.veltusstudio.glyph.R
+import com.veltusstudio.glyph.agent.core.GlyphAuthManager
 import com.veltusstudio.glyph.agent.daemon.AgyDaemonManager
 import com.veltusstudio.glyph.agent.daemon.DaemonState
+import com.veltusstudio.glyph.agent.ui.tabs.HubSubTab
 import com.veltusstudio.glyph.agent.ui.theme.LocalActivePalette
 import com.veltusstudio.glyph.agent.ui.theme.LocalGlyphColors
 import com.veltusstudio.glyph.agent.ui.theme.PaletteId
@@ -45,12 +47,15 @@ fun WorkspaceDrawer(
     onNavigateScreen: (String) -> Unit,
     daemonManager: AgyDaemonManager,
     onCloseDrawer: () -> Unit,
+    onOpenHubSubTab: ((HubSubTab) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalGlyphColors.current
     val activePaletteState = LocalActivePalette.current
     val context = LocalContext.current
     val daemonState by daemonManager.daemonState.collectAsState()
+    val authManager = remember { GlyphAuthManager.getInstance(context) }
+    val authState by authManager.authState.collectAsState()
 
     var showCustomPathDialog by remember { mutableStateOf(false) }
     var customPathInput by remember { mutableStateOf("") }
@@ -195,7 +200,76 @@ fun WorkspaceDrawer(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // User Profile Card
+            Surface(
+                shape = RoundedCornerShape(5.dp),
+                color = colors.surfaceCard,
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onNavigateScreen("auth")
+                        onCloseDrawer()
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = CircleShape,
+                            color = colors.accentPrimary,
+                            modifier = Modifier.size(26.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = authState.avatarLetter,
+                                    color = colors.accentOnPrimary,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = authState.displayName,
+                                color = colors.textPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                text = authState.userEmail,
+                                color = colors.textMuted,
+                                fontSize = 8.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(2.dp),
+                        color = colors.accentGlow
+                    ) {
+                        Text(
+                            text = authState.tier,
+                            color = colors.accentPrimary,
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
 
             // CTA: New Cascade Session
             Button(
@@ -270,6 +344,60 @@ fun WorkspaceDrawer(
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // Ecosystem & Subsystems
+            Text(
+                text = "EXTENSIONS & ECOSYSTEM",
+                color = colors.textMuted,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.08.sp,
+                fontFamily = FontFamily.Monospace
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            val subsystems = listOf(
+                Pair("MCP SERVERS (6 ONLINE)", HubSubTab.MCP),
+                Pair("PLUGINS & TOOLS (5 ACTIVE)", HubSubTab.PLUGINS),
+                Pair("SKILLS STUDIO (8 SKILLS)", HubSubTab.SKILLS)
+            )
+
+            subsystems.forEach { (label, targetSubTab) ->
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = colors.surfaceCard,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.5.dp)
+                        .clickable {
+                            onOpenHubSubTab?.invoke(targetSubTab)
+                            onCloseDrawer()
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = colors.accentGlow,
+                            modifier = Modifier.size(6.dp)
+                        ) {}
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = label,
+                            color = colors.accentPrimary,
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
             }
 

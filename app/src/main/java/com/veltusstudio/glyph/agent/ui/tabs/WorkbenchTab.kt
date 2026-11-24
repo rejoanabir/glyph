@@ -256,7 +256,6 @@ fun WorkbenchTab(
                 .background(colors.surfaceGlass)
                 .border(androidx.compose.foundation.BorderStroke(1.dp, colors.borderSubtle))
                 .padding(horizontal = 10.dp, vertical = 6.dp)
-                .imePadding()
         ) {
             pendingApproval?.let { approval ->
                 ToolApprovalBar(approval = approval)
