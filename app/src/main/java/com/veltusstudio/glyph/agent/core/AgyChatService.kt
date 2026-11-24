@@ -132,10 +132,7 @@ class AgyChatService private constructor() {
         streamingJob = scope.launch {
             try {
                 // Ensure Hub CSRF token is available
-                val csrf = AgyCsrfManager.instance.hubCsrfToken
-                if (csrf.isBlank()) {
-                    AgyCsrfManager.instance.refreshFromBridge()
-                }
+                AgyCsrfManager.instance.getEffectiveCsrfToken()
 
                 // 1. Start cascade on daemon if first message
                 if (!isConversationStartedOnDaemon) {
@@ -148,7 +145,14 @@ class AgyChatService private constructor() {
                         override_workspace_uris = listOf(normalizedUri)
                     )
 
-                    val startRes = AgyLanguageServiceHolder.service.StartCascade().executeSafely(startReq)
+                    var startRes = AgyLanguageServiceHolder.service.StartCascade().executeSafely(startReq)
+                    if (startRes.isFailure) {
+                        Log.w(TAG, "StartCascade initial attempt failed, re-fetching CSRF and retrying once...")
+                        AgyCsrfManager.instance.refreshFromHubHtml()
+                        AgyCsrfManager.instance.refreshFromBridge()
+                        startRes = AgyLanguageServiceHolder.service.StartCascade().executeSafely(startReq)
+                    }
+
                     if (startRes.isSuccess) {
                         isConversationStartedOnDaemon = true
                     } else {
@@ -190,7 +194,14 @@ class AgyChatService private constructor() {
                     delivery_strategy = MessageDeliveryStrategy.MESSAGE_DELIVERY_STRATEGY_WHEN_IDLE
                 )
 
-                val sendRes = AgyLanguageServiceHolder.service.SendUserCascadeMessage().executeSafely(sendReq)
+                var sendRes = AgyLanguageServiceHolder.service.SendUserCascadeMessage().executeSafely(sendReq)
+                if (sendRes.isFailure) {
+                    Log.w(TAG, "SendUserCascadeMessage initial attempt failed, re-fetching CSRF and retrying once...")
+                    AgyCsrfManager.instance.refreshFromHubHtml()
+                    AgyCsrfManager.instance.refreshFromBridge()
+                    sendRes = AgyLanguageServiceHolder.service.SendUserCascadeMessage().executeSafely(sendReq)
+                }
+
                 if (sendRes.isFailure) {
                     val err = sendRes.exceptionOrNull()?.message ?: "Daemon communication failed"
                     _agentStatus.value = AgentStatus.ERROR

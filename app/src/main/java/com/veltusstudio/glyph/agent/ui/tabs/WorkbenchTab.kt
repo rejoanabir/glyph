@@ -1,5 +1,11 @@
 package com.veltusstudio.glyph.agent.ui.tabs
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -19,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,6 +44,7 @@ fun WorkbenchTab(
     daemonManager: AgyDaemonManager,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val colors = LocalGlyphColors.current
     val daemonState by daemonManager.daemonState.collectAsState()
     val messages by chatService.messages.collectAsState()
@@ -61,14 +69,36 @@ fun WorkbenchTab(
     ) {
         // Disconnected warning banner
         if (daemonState != DaemonState.RUNNING) {
+            val isStarting = daemonState == DaemonState.STARTING
+            val needsStorage = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()
+
+            val bannerColor = if (isStarting) colors.accentPrimary else if (needsStorage) colors.statusAmber else colors.statusCrimson
+            val bannerTitle = if (isStarting) "CONNECTING TO GLYPH HUB" else if (needsStorage) "STORAGE PERMISSION REQUIRED" else "HUB CONNECTION REQUIRED"
+            val bannerSubtitle = if (isStarting) "Probing port :1237 loopback..." else if (needsStorage) "All Files access needed for project worktrees & engine." else "Port 1237 offline. Tap to connect or start daemon."
+            val buttonText = if (isStarting) "WAIT..." else if (needsStorage) "GRANT" else "CONNECT"
+
             Surface(
                 shape = RoundedCornerShape(4.dp),
-                color = colors.statusCrimson.copy(alpha = 0.12f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, colors.statusCrimson.copy(alpha = 0.5f)),
+                color = bannerColor.copy(alpha = 0.12f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, bannerColor.copy(alpha = 0.5f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 6.dp)
-                    .clickable { daemonManager.startOrConnectDaemon(workspaceDir) }
+                    .clickable {
+                        if (needsStorage) {
+                            try {
+                                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                context.startActivity(intent)
+                            }
+                        } else {
+                            daemonManager.startOrConnectDaemon(workspaceDir)
+                        }
+                    }
             ) {
                 Row(
                     modifier = Modifier.padding(10.dp),
@@ -77,32 +107,55 @@ fun WorkbenchTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "HUB CONNECTION REQUIRED",
-                            color = colors.statusCrimson,
+                            text = bannerTitle,
+                            color = bannerColor,
                             fontSize = 10.5.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
-                            text = "Port 1237 offline. Tap to connect or start daemon.",
+                            text = bannerSubtitle,
                             color = colors.textSecondary,
                             fontSize = 9.5.sp,
                             fontFamily = FontFamily.Monospace
                         )
                     }
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = colors.statusCrimson,
-                        modifier = Modifier.clickable { daemonManager.startOrConnectDaemon(workspaceDir) }
-                    ) {
-                        Text(
-                            text = "CONNECT",
-                            color = Color.White,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+
+                    if (isStarting) {
+                        CircularProgressIndicator(
+                            color = bannerColor,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp)
                         )
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = bannerColor,
+                            modifier = Modifier.clickable {
+                                if (needsStorage) {
+                                    try {
+                                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                            data = Uri.parse("package:${context.packageName}")
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                        context.startActivity(intent)
+                                    }
+                                } else {
+                                    daemonManager.startOrConnectDaemon(workspaceDir)
+                                }
+                            }
+                        ) {
+                            Text(
+                                text = buttonText,
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
                     }
                 }
             }

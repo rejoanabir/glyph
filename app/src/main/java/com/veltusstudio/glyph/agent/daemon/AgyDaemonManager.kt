@@ -3,15 +3,18 @@ package com.veltusstudio.glyph.agent.daemon
 import android.content.Context
 import android.util.Log
 import com.veltusstudio.glyph.agent.core.AgyCsrfManager
+import com.veltusstudio.glyph.agent.core.AgyOkHttpClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import okhttp3.Request
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStreamReader
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 
@@ -51,15 +54,64 @@ class AgyDaemonManager(private val context: Context) {
 
     private var bridgeProcess: Process? = null
 
+    init {
+        // Continuous background monitor to auto-detect when hub comes online
+        scope.launch {
+            while (isActive) {
+                try {
+                    val hubUp = isPortOpen(DEFAULT_HUB_PORT, 400) || probeHttp(DEFAULT_HUB_URL)
+                    if (hubUp) {
+                        if (_daemonState.value != DaemonState.RUNNING) {
+                            Log.i(TAG, "Hub detected online on port $DEFAULT_HUB_PORT")
+                            AgyCsrfManager.instance.getEffectiveCsrfToken()
+                            _daemonState.value = DaemonState.RUNNING
+                            _statusMessage.value = "ONLINE · HUB :$DEFAULT_HUB_PORT"
+                        }
+                    } else {
+                        if (_daemonState.value == DaemonState.RUNNING) {
+                            Log.w(TAG, "Hub lost connection on port $DEFAULT_HUB_PORT")
+                            _daemonState.value = DaemonState.ERROR
+                            _statusMessage.value = "CONNECTION LOST · PORT :$DEFAULT_HUB_PORT"
+                        }
+                    }
+                } catch (_: Exception) {}
+                delay(3500)
+            }
+        }
+    }
+
     /**
-     * Non-blocking socket probe to check if a TCP port is open.
+     * Fast non-blocking socket probe to check if a TCP port is open.
      */
-    fun isPortOpen(port: Int, timeoutMs: Int = 800): Boolean {
+    fun isPortOpen(port: Int, timeoutMs: Int = 500): Boolean {
+        // Try loopback address
+        try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), port), timeoutMs)
+                return true
+            }
+        } catch (_: Exception) {}
+
+        // Fallback to literal 127.0.0.1
+        try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress("127.0.0.1", port), timeoutMs)
+                return true
+            }
+        } catch (_: Exception) {}
+
+        return false
+    }
+
+    /**
+     * Fast HTTP probe
+     */
+    private fun probeHttp(url: String): Boolean {
         return try {
-            val socket = Socket()
-            socket.connect(InetSocketAddress("127.0.0.1", port), timeoutMs)
-            socket.close()
-            true
+            val req = Request.Builder().url(url).head().build()
+            AgyOkHttpClient.bridgeClient.newCall(req).execute().use { resp ->
+                resp.isSuccessful || resp.code in 200..499
+            }
         } catch (_: Exception) {
             false
         }
@@ -78,6 +130,7 @@ class AgyDaemonManager(private val context: Context) {
             File(context.getExternalFilesDir(null), "bin/agy"),
             File("/storage/emulated/0/Download/agy"),
             File("/storage/emulated/0/CodeOnTheGoProjects/agy"),
+            File("/data/user/0/ai.antigem/files/home/test_agy"),
             File("/data/user/0/ai.antigem/files/home/.local/bin/agy"),
             File("/data/data/com.termux/files/home/.local/bin/agy")
         )
@@ -86,6 +139,7 @@ class AgyDaemonManager(private val context: Context) {
             File("/storage/emulated/0/.antigravity_bin/agy_ide_bridge"),
             File(context.getExternalFilesDir(null), "bin/agy_ide_bridge"),
             File("/storage/emulated/0/Download/agy_ide_bridge"),
+            File("/data/user/0/ai.antigem/files/home/test_bridge"),
             File("/data/user/0/ai.antigem/files/usr/bin/agy_ide_bridge")
         )
 
@@ -161,14 +215,12 @@ class AgyDaemonManager(private val context: Context) {
             _statusMessage.value = "CONNECTING TO HUB"
 
             // 1. Check if ports are already listening
-            val hubOpen = isPortOpen(DEFAULT_HUB_PORT, 600)
-            val bridgeOpen = isPortOpen(DEFAULT_BRIDGE_PORT, 600)
+            val hubOpen = isPortOpen(DEFAULT_HUB_PORT, 500) || probeHttp(DEFAULT_HUB_URL)
+            val bridgeOpen = isPortOpen(DEFAULT_BRIDGE_PORT, 500)
 
             if (hubOpen) {
                 Log.d(TAG, "Hub port $DEFAULT_HUB_PORT is open and listening")
-                if (bridgeOpen) {
-                    AgyCsrfManager.instance.refreshFromBridge(DEFAULT_BRIDGE_URL)
-                }
+                AgyCsrfManager.instance.getEffectiveCsrfToken()
                 _daemonState.value = DaemonState.RUNNING
                 _statusMessage.value = "ONLINE · HUB :$DEFAULT_HUB_PORT"
                 return@launch
@@ -229,16 +281,16 @@ class AgyDaemonManager(private val context: Context) {
                 }
 
                 var online = false
-                for (i in 1..30) {
-                    delay(500)
-                    if (isPortOpen(DEFAULT_HUB_PORT, 500)) {
+                for (i in 1..35) {
+                    delay(400)
+                    if (isPortOpen(DEFAULT_HUB_PORT, 400) || probeHttp(DEFAULT_HUB_URL)) {
                         online = true
                         break
                     }
                 }
 
                 if (online) {
-                    AgyCsrfManager.instance.refreshFromBridge(DEFAULT_BRIDGE_URL)
+                    AgyCsrfManager.instance.getEffectiveCsrfToken()
                     _daemonState.value = DaemonState.RUNNING
                     _statusMessage.value = "ONLINE · HUB :$DEFAULT_HUB_PORT"
                 } else {

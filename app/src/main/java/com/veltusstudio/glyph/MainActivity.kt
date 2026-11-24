@@ -3,14 +3,18 @@ package com.veltusstudio.glyph
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.ContextCompat
+import com.veltusstudio.glyph.agent.daemon.AgyDaemonManager
 import com.veltusstudio.glyph.agent.ui.AntigravityMainWorkspace
 import com.veltusstudio.glyph.agent.ui.theme.GlyphTheme
 import com.veltusstudio.glyph.agent.ui.theme.LocalActivePalette
@@ -22,7 +26,7 @@ class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
-        // Permissions handled
+        AgyDaemonManager.getInstance(this).startOrConnectDaemon()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,6 +51,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Auto-detect and connect to daemon whenever app is brought to foreground
+        AgyDaemonManager.getInstance(this).startOrConnectDaemon()
+    }
+
     private fun requestRequiredPermissions() {
         val permissionsToRequest = mutableListOf<String>()
 
@@ -67,6 +77,20 @@ class MainActivity : ComponentActivity() {
 
         if (permissionsToRequest.isNotEmpty()) {
             permissionLauncher.launch(permissionsToRequest.toTypedArray())
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            try {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            } catch (_: Exception) {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    startActivity(intent)
+                } catch (_: Exception) {}
+            }
         }
     }
 

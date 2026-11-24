@@ -107,6 +107,36 @@ class AgyCsrfManager private constructor() {
     val currentFramedHeader: String
         get() = buildFramedHeader(securityToken)
 
+    /**
+     * Extracts CSRF token directly from Antigravity Hub root web page.
+     * Accessible on port 1237 without any credentials or supervisor.
+     */
+    fun refreshFromHubHtml(hubUrl: String = "http://127.0.0.1:1237"): String {
+        try {
+            val req = Request.Builder()
+                .url(hubUrl)
+                .header("User-Agent", "Glyph-Agent-Android")
+                .get()
+                .build()
+
+            bridgeHttpClient.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string() ?: return ""
+                    val regex = Regex("""\"csrfToken\"\s*:\s*\"([^\"]+)\"""")
+                    val match = regex.find(body)
+                    val token = match?.groupValues?.get(1)
+                    if (!token.isNullOrBlank()) {
+                        setHubCsrfToken(token)
+                        return token
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to extract CSRF token from Hub HTML: ${e.message}")
+        }
+        return ""
+    }
+
     fun refreshFromBridge(bridgeUrl: String = "http://127.0.0.1:1236"): String {
         try {
             val req = Request.Builder()
@@ -143,6 +173,33 @@ class AgyCsrfManager private constructor() {
         }
 
         return hubCsrfToken
+    }
+
+    /**
+     * Obtains a valid CSRF token through multi-source cascading resolution.
+     */
+    fun getEffectiveCsrfToken(): String {
+        var token = hubCsrfToken
+        if (token.isNotBlank()) return token
+
+        token = refreshFromHubHtml()
+        if (token.isNotBlank()) return token
+
+        token = refreshFromBridge()
+        if (token.isNotBlank()) return token
+
+        val sharedFile = File("/storage/emulated/0/.antigravity_bin/hub_csrf_token.txt")
+        if (sharedFile.exists()) {
+            try {
+                val t = sharedFile.readText().trim()
+                if (t.isNotBlank()) {
+                    setHubCsrfToken(t)
+                    return t
+                }
+            } catch (_: Exception) {}
+        }
+
+        return ""
     }
 
     fun notifyCsrfExpired(endpoint: String = "", usedToken: String? = null) {

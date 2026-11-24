@@ -53,18 +53,17 @@ object AgyOkHttpClient {
             .retryOnConnectionFailure(true)
             .addInterceptor { chain ->
                 val csrfManager = AgyCsrfManager.instance
-                var csrf = csrfManager.hubCsrfToken
-                if (csrf.isBlank()) {
-                    csrf = csrfManager.refreshFromBridge()
-                }
-
+                val csrf = csrfManager.getEffectiveCsrfToken()
                 val framedHeader = csrfManager.currentFramedHeader
+
                 val requestBuilder = chain.request().newBuilder()
                     .header("User-Agent", "Glyph-Agent-Android")
-                    .header("X-Grpc-Web", "1")
-                    .header(framedHeader, csrf.ifBlank { "true" })
-                    .header("x-codeium-csrf-token", csrf)
-                    .header("Authorization", "Bearer $csrf")
+
+                if (csrf.isNotBlank()) {
+                    requestBuilder.header("x-codeium-csrf-token", csrf)
+                    requestBuilder.header(framedHeader, csrf)
+                    requestBuilder.header("Authorization", "Bearer $csrf")
+                }
 
                 val request = requestBuilder.build()
                 val response = chain.proceed(request)
