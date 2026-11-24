@@ -3,6 +3,19 @@ import java.io.FileInputStream
 
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.wire)
+    alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
+}
+
+wire {
+    sourcePath {
+        srcDir("src/main/proto")
+    }
+    kotlin {
+        rpcRole = "client"
+        rpcCallStyle = "suspending"
+    }
 }
 
 val keystorePropsFile = rootProject.file("release.properties")
@@ -88,6 +101,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        compose = true
     }
 
     packaging {
@@ -116,9 +130,14 @@ android {
             force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.21")
             force("androidx.collection:collection:1.4.2")
             force("androidx.annotation:annotation:1.8.1")
-            force("androidx.core:core-ktx:1.8.0")
-            force("androidx.lifecycle:lifecycle-runtime-ktx:2.3.1")
+            force("androidx.core:core-ktx:1.15.0")
+            force("androidx.core:core:1.15.0")
+            force("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+            force("androidx.lifecycle:lifecycle-runtime:2.8.7")
+            force("androidx.lifecycle:lifecycle-common:2.8.7")
             force("androidx.collection:collection-ktx:1.4.2")
+            force("com.squareup.okhttp3:okhttp:4.12.0")
+            force("com.squareup.okhttp3:okhttp-android:4.12.0")
         }
     }
 }
@@ -139,5 +158,28 @@ dependencies {
     implementation(libs.android.material)
     implementation(libs.androidx.startup.runtime)
     implementation(libs.androidx.interpolator)
+
+    // Wire Protobuf & gRPC runtime
+    implementation(libs.wire.runtime)
+    implementation(libs.wire.grpc.client)
+
+    // Networking & Coroutines
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.sse)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
+
+    // Jetpack Compose
+    val composeBom = platform(libs.androidx.compose.bom)
+    implementation(composeBom)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+
     testImplementation(libs.junit)
 }

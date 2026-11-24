@@ -145,6 +145,12 @@ class MainActivity : Activity() {
     private lateinit var micButton: TextView
     private lateinit var sendButton: Button
 
+    private lateinit var emptyBadgePill: TextView
+    private lateinit var emptyTitleText: TextView
+    private lateinit var emptyActionBtn1: TextView
+    private lateinit var emptyCatalogShortcut: TextView
+    private var activeHttpConn: HttpURLConnection? = null
+
     private var speechRecognizer: SpeechRecognizer? = null
     private var isListening = false
     private var isGenerating = false
@@ -154,7 +160,15 @@ class MainActivity : Activity() {
     private fun isNativeMode(): Boolean = prefs().getBoolean("native_mode", true)
     private fun getSavedModelPath(): String = prefs().getString("model_path", "") ?: ""
     private fun getSavedModelName(): String = prefs().getString("model_name", "") ?: ""
-    private fun getServerUrl(): String = prefs().getString("server_url", "http://127.0.0.1:8080") ?: "http://127.0.0.1:8080"
+    private fun getApiBaseUrl(): String {
+        return prefs().getString("api_base_url", null)
+            ?: prefs().getString("server_url", "https://tokens.bd/v1")
+            ?: "https://tokens.bd/v1"
+    }
+    private fun getServerUrl(): String = getApiBaseUrl()
+    private fun getApiKey(): String = prefs().getString("api_key", "") ?: ""
+    private fun getApiModel(): String = prefs().getString("api_model", "claude-3-5-sonnet-20241022") ?: "claude-3-5-sonnet-20241022"
+    private fun getApiProtocol(): String = prefs().getString("api_protocol", "openai") ?: "openai"
     private fun getSystemPrompt(): String = prefs().getString("system_prompt", personaPresets[0].second) ?: personaPresets[0].second
     private fun getTemperature(): Float = prefs().getFloat("temperature", 0.7f)
     private fun getMaxTokens(): Int = prefs().getInt("max_tokens", 1024)
@@ -162,6 +176,20 @@ class MainActivity : Activity() {
     private fun getCpuThreads(): Int {
         val defaultThreads = Runtime.getRuntime().availableProcessors().coerceIn(2, 6)
         return prefs().getInt("n_threads", defaultThreads)
+    }
+
+    private fun resolveEndpointUrl(baseUrl: String, protocol: String): String {
+        val clean = baseUrl.trim().removeSuffix("/")
+        return if (protocol == "anthropic" || clean.contains("anthropic.com")) {
+            if (clean.endsWith("/v1/messages")) clean
+            else if (clean.endsWith("/messages")) clean
+            else if (clean.endsWith("/v1")) "$clean/messages"
+            else "$clean/v1/messages"
+        } else {
+            if (clean.endsWith("/chat/completions")) clean
+            else if (clean.endsWith("/v1")) "$clean/chat/completions"
+            else "$clean/v1/chat/completions"
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -207,6 +235,7 @@ class MainActivity : Activity() {
         super.onDestroy()
         speechRecognizer?.destroy()
         llamaBridge.unload()
+        try { activeHttpConn?.disconnect() } catch (_: Exception) {}
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -694,10 +723,62 @@ class MainActivity : Activity() {
 
     // --- Engine & Model Management ---
 
+    private fun updateEmptyStateUi() {
+        if (!::emptyBadgePill.isInitialized) return
+        val isNative = isNativeMode()
+        if (isNative) {
+            emptyBadgePill.text = "✦  Local-First Intelligence"
+            emptyTitleText.text = "Standalone On-Device Mode"
+            val savedName = getSavedModelName()
+            if (llamaBridge.isLoaded && savedName.isNotEmpty()) {
+                emptySubLabel.text = "Loaded: $savedName\n100% Offline • ${getCpuThreads()} CPU threads • ${getCtxSize()} context"
+            } else {
+                emptySubLabel.text = "Pick a .gguf file or download Qwen 1.5B below to begin"
+            }
+            emptyActionBtn1.text = "📁  Select Model (.gguf)"
+            emptyActionBtn1.setOnClickListener { openModelFilePicker() }
+            downloadBtn.text = "⬇  Download Qwen 1.5B (1.12 GB)"
+            downloadBtn.setOnClickListener { downloadCatalogModel(modelCatalog[1]) }
+            emptyCatalogShortcut.text = "🗂   Browse All GGUF Models in ⚙"
+            emptyCatalogShortcut.setOnClickListener { openSettingsDialog() }
+        } else {
+            val model = getApiModel()
+            val key = getApiKey()
+            val url = getApiBaseUrl()
+            emptyBadgePill.text = "✦  Custom Token & Cloud API"
+            emptyTitleText.text = model
+            if (key.isNotEmpty()) {
+                emptySubLabel.text = "Connected to $url\nCloud model ready for streaming chat"
+                emptyActionBtn1.text = "💬  Chat with $model"
+                emptyActionBtn1.setOnClickListener {
+                    inputField.requestFocus()
+                }
+            } else {
+                emptySubLabel.text = "Endpoint: $url\nEnter your Tokens.BD / Claude API Key in ⚙ to start"
+                emptyActionBtn1.text = "🔑  Configure API Key in ⚙"
+                emptyActionBtn1.setOnClickListener { openSettingsDialog() }
+            }
+            downloadBtn.text = "⚙  Switch Cloud Model / Provider"
+            downloadBtn.setOnClickListener { openSettingsDialog() }
+            emptyCatalogShortcut.text = "⚡  Tokens.BD • Claude 3.5/3.7 • OpenAI • DeepSeek"
+            emptyCatalogShortcut.setOnClickListener { openSettingsDialog() }
+        }
+    }
+
     private fun initializeEngine(forceReload: Boolean = false) {
+        updateEmptyStateUi()
         if (!isNativeMode()) {
-            subtitleText.text = "Hybrid Server Mode"
-            checkServerHealth()
+            val modelName = getApiModel()
+            val apiKey = getApiKey()
+            val baseUrl = getApiBaseUrl()
+            val isLocal = baseUrl.contains("127.0.0.1") || baseUrl.contains("localhost")
+            if (apiKey.isEmpty() && !isLocal) {
+                setStatus("Key Needed", "#F59E0B")
+                subtitleText.text = "Cloud: $modelName (No Key)"
+            } else {
+                setStatus("Cloud Ready", "#10B981")
+                subtitleText.text = "Cloud: $modelName"
+            }
             return
         }
 
@@ -1061,7 +1142,25 @@ class MainActivity : Activity() {
             if (isNativeMode()) openSettingsDialog() else checkServerHealth()
         }
 
+        // Antigravity Agent Pill
+        val agentBtn = TextView(this).apply {
+            text = "⚡ Agent"
+            setTextColor(Color.parseColor("#818CF8"))
+            textSize = 11.5f
+            typeface = Typeface.DEFAULT_BOLD
+            background = roundedBox(surfaceCard, Color.parseColor("#4D818CF8"), 50)
+            setPadding(dp(9), dp(5), dp(9), dp(5))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginEnd = dp(5)
+            }
+            setOnClickListener { openAntigravityAgentScreen() }
+        }
+
         header.addView(titleCol)
+        header.addView(agentBtn)
         header.addView(historyBtn)
         header.addView(newChatBtn)
         header.addView(settingsBtn)
@@ -1106,7 +1205,7 @@ class MainActivity : Activity() {
             )
         }
 
-        val badgePill = TextView(this).apply {
+        emptyBadgePill = TextView(this).apply {
             text = "✦  Local-First Intelligence"
             setTextColor(textPrimary)
             textSize = 11.5f
@@ -1122,7 +1221,7 @@ class MainActivity : Activity() {
             }
         }
 
-        val emptyTitle = TextView(this).apply {
+        emptyTitleText = TextView(this).apply {
             text = "Standalone On-Device Mode"
             setTextColor(textPrimary)
             textSize = 17f
@@ -1138,7 +1237,7 @@ class MainActivity : Activity() {
             setPadding(0, dp(6), 0, dp(18))
         }
 
-        val pickBtn = TextView(this).apply {
+        emptyActionBtn1 = TextView(this).apply {
             text = "📁  Select Model (.gguf)"
             setTextColor(bgObsidian)
             textSize = 13.5f
@@ -1169,10 +1268,10 @@ class MainActivity : Activity() {
             setOnClickListener { downloadCatalogModel(modelCatalog[1]) }
         }
 
-        heroCard.addView(badgePill)
-        heroCard.addView(emptyTitle)
+        heroCard.addView(emptyBadgePill)
+        heroCard.addView(emptyTitleText)
         heroCard.addView(emptySubLabel)
-        heroCard.addView(pickBtn)
+        heroCard.addView(emptyActionBtn1)
         heroCard.addView(downloadBtn)
 
         val dividerLine = View(this).apply {
@@ -1186,7 +1285,7 @@ class MainActivity : Activity() {
             }
         }
 
-        val catalogShortcut = TextView(this).apply {
+        emptyCatalogShortcut = TextView(this).apply {
             text = "🗂   Browse All Models in ⚙"
             setTextColor(textPrimary)
             textSize = 12.5f
@@ -1201,7 +1300,7 @@ class MainActivity : Activity() {
 
         emptyState.addView(heroCard)
         emptyState.addView(dividerLine)
-        emptyState.addView(catalogShortcut)
+        emptyState.addView(emptyCatalogShortcut)
         messageContainer.addView(emptyState)
         scrollView.addView(messageContainer)
         root.addView(scrollView)
@@ -1379,7 +1478,9 @@ class MainActivity : Activity() {
             setPadding(dp(16), dp(12), dp(16), dp(12))
             setOnClickListener {
                 if (isGenerating) {
+                    isGenerating = false
                     llamaBridge.stop()
+                    try { activeHttpConn?.disconnect() } catch (_: Exception) {}
                 } else {
                     sendMessage()
                 }
@@ -1399,7 +1500,9 @@ class MainActivity : Activity() {
 
     private fun startNewChat(silent: Boolean = false) {
         if (isGenerating) {
+            isGenerating = false
             llamaBridge.stop()
+            try { activeHttpConn?.disconnect() } catch (_: Exception) {}
             return
         }
         activeSessionId = UUID.randomUUID().toString()
@@ -1411,6 +1514,20 @@ class MainActivity : Activity() {
         if (!silent) {
             Toast.makeText(this, "New conversation started", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun openAntigravityAgentScreen() {
+        val dialog = android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        val composeView = androidx.compose.ui.platform.ComposeView(this).apply {
+            setContent {
+                com.veltusstudio.glyph.agent.ui.AntigravityAgentScreen(
+                    workspaceDir = filesDir.absolutePath,
+                    onClose = { dialog.dismiss() }
+                )
+            }
+        }
+        dialog.setContentView(composeView)
+        dialog.show()
     }
 
     private fun openSettingsDialog() {
@@ -1445,17 +1562,395 @@ class MainActivity : Activity() {
 
         var dialogRef: AlertDialog? = null
 
-        val nativeSwitch = Switch(this).apply {
-            text = "Standalone On-Device Engine"
+        // Top Engine Mode Switcher Tabs
+        var selectedModeIsNative = isNativeMode()
+        val modeSelectorRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(12)
+            }
+        }
+
+        val modeLocalBtn = TextView(this).apply {
+            text = "💻 Local (GGUF)"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(6)
+            }
+        }
+
+        val modeCloudBtn = TextView(this).apply {
+            text = "☁ Cloud (Tokens.BD & Claude)"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val localSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val cloudSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        fun updateModeTabs() {
+            modeLocalBtn.setTextColor(if (selectedModeIsNative) bgObsidian else textPrimary)
+            modeLocalBtn.background = roundedBox(
+                if (selectedModeIsNative) accentCyan else surfaceCard,
+                if (selectedModeIsNative) accentCyan else borderSubtle,
+                10
+            )
+
+            modeCloudBtn.setTextColor(if (!selectedModeIsNative) bgObsidian else textPrimary)
+            modeCloudBtn.background = roundedBox(
+                if (!selectedModeIsNative) accentCyan else surfaceCard,
+                if (!selectedModeIsNative) accentCyan else borderSubtle,
+                10
+            )
+
+            localSection.visibility = if (selectedModeIsNative) View.VISIBLE else View.GONE
+            cloudSection.visibility = if (!selectedModeIsNative) View.VISIBLE else View.GONE
+        }
+
+        modeLocalBtn.setOnClickListener {
+            selectedModeIsNative = true
+            updateModeTabs()
+        }
+
+        modeCloudBtn.setOnClickListener {
+            selectedModeIsNative = false
+            updateModeTabs()
+        }
+
+        modeSelectorRow.addView(modeLocalBtn)
+        modeSelectorRow.addView(modeCloudBtn)
+        container.addView(modeSelectorRow)
+
+        // --- CLOUD SECTION (Tokens.BD, Claude, OpenRouter, Custom) ---
+        val urlInput = makeInput(getApiBaseUrl())
+        val modelInput = makeInput(getApiModel())
+        modelInput.hint = "e.g. claude-3-5-sonnet-20241022"
+
+        var selectedProtocol = getApiProtocol() // "openai" or "anthropic"
+
+        val protoOpenAiBtn = TextView(this).apply {
+            text = "OpenAI Compatible (/v1)"
+            textSize = 10.5f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(6)
+            }
+        }
+
+        val protoAnthropicBtn = TextView(this).apply {
+            text = "Anthropic Native (/v1/messages)"
+            textSize = 10.5f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        fun updateProtoButtons() {
+            val isOpenAi = selectedProtocol == "openai"
+            protoOpenAiBtn.setTextColor(if (isOpenAi) bgObsidian else textPrimary)
+            protoOpenAiBtn.background = roundedBox(
+                if (isOpenAi) accentCyan else surfaceCard,
+                if (isOpenAi) accentCyan else borderSubtle,
+                10
+            )
+            protoAnthropicBtn.setTextColor(if (!isOpenAi) bgObsidian else textPrimary)
+            protoAnthropicBtn.background = roundedBox(
+                if (!isOpenAi) accentCyan else surfaceCard,
+                if (!isOpenAi) accentCyan else borderSubtle,
+                10
+            )
+        }
+
+        protoOpenAiBtn.setOnClickListener {
+            selectedProtocol = "openai"
+            updateProtoButtons()
+        }
+        protoAnthropicBtn.setOnClickListener {
+            selectedProtocol = "anthropic"
+            updateProtoButtons()
+        }
+        updateProtoButtons()
+
+        // 1-Tap Cloud Provider Presets
+        cloudSection.addView(makeLabel("1-TAP PROVIDER PRESETS"))
+        val presetScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(4)
+            }
+        }
+        val presetRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val presetsList = listOf(
+            Triple("Tokens.BD (Claude/OpenAI)", "https://tokens.bd/v1", "claude-3-5-sonnet-20241022"),
+            Triple("Anthropic Direct", "https://api.anthropic.com", "claude-3-5-sonnet-20241022"),
+            Triple("OpenRouter", "https://openrouter.ai/api/v1", "anthropic/claude-3.5-sonnet"),
+            Triple("Local llama-server", "http://127.0.0.1:8080", "default")
+        )
+        presetsList.forEach { (label, presetUrl, presetModel) ->
+            val pChip = TextView(this).apply {
+                text = label
+                setTextColor(textPrimary)
+                textSize = 11.5f
+                typeface = Typeface.DEFAULT_BOLD
+                background = roundedBox(surfaceCard, borderSubtle, 10)
+                setPadding(dp(11), dp(7), dp(11), dp(7))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginEnd = dp(6)
+                }
+                setOnClickListener {
+                    urlInput.setText(presetUrl)
+                    modelInput.setText(presetModel)
+                    if (presetUrl.contains("anthropic.com")) {
+                        selectedProtocol = "anthropic"
+                    } else {
+                        selectedProtocol = "openai"
+                    }
+                    updateProtoButtons()
+                    Toast.makeText(this@MainActivity, "$label preset applied", Toast.LENGTH_SHORT).show()
+                }
+            }
+            presetRow.addView(pChip)
+        }
+        presetScroll.addView(presetRow)
+        cloudSection.addView(presetScroll)
+
+        // API Key with Show/Hide Toggle
+        cloudSection.addView(makeLabel("API KEY / CUSTOM TOKEN"))
+        val keyRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val keyInput = EditText(this).apply {
+            setText(getApiKey())
+            hint = "Paste Tokens.BD / Claude API key"
+            setHintTextColor(textMuted)
             setTextColor(textPrimary)
             textSize = 13f
-            isChecked = isNativeMode()
-            setPadding(0, dp(4), 0, dp(8))
+            background = roundedBox(surfaceCard, borderSubtle, 10)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(6)
+            }
         }
-        container.addView(nativeSwitch)
+        var keyVisible = false
+        val toggleKeyBtn = TextView(this).apply {
+            text = "Show"
+            setTextColor(accentCyan)
+            textSize = 11.5f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = roundedBox(surfaceCard, borderSubtle, 10)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setOnClickListener {
+                keyVisible = !keyVisible
+                if (keyVisible) {
+                    keyInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                    text = "Hide"
+                } else {
+                    keyInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                    text = "Show"
+                }
+                keyInput.setSelection(keyInput.text.length)
+            }
+        }
+        keyRow.addView(keyInput)
+        keyRow.addView(toggleKeyBtn)
+        cloudSection.addView(keyRow)
 
-        // Installed GGUF Models List
-        container.addView(makeLabel("INSTALLED GGUF MODELS"))
+        // API Base URL
+        cloudSection.addView(makeLabel("API BASE URL (ENDPOINT)"))
+        cloudSection.addView(urlInput)
+
+        // Model Identifier + Suggestions Chips
+        cloudSection.addView(makeLabel("CLOUD MODEL IDENTIFIER"))
+        cloudSection.addView(modelInput)
+
+        val modelChipsScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(6)
+                bottomMargin = dp(4)
+            }
+        }
+        val modelChipsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val suggestedModels = listOf(
+            "Claude 3.5 Sonnet" to "claude-3-5-sonnet-20241022",
+            "Claude 3.7 Sonnet" to "claude-3-7-sonnet",
+            "Claude 3.5 Haiku" to "claude-3-5-haiku-20241022",
+            "DeepSeek V3" to "deepseek-chat",
+            "GPT-4o" to "gpt-4o",
+            "GPT-4o Mini" to "gpt-4o-mini"
+        )
+        suggestedModels.forEach { (chipLabel, modelId) ->
+            val chip = TextView(this).apply {
+                text = chipLabel
+                setTextColor(textPrimary)
+                textSize = 11f
+                typeface = Typeface.DEFAULT_BOLD
+                background = roundedBox(surfaceCard, borderSubtle, 10)
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginEnd = dp(6)
+                }
+                setOnClickListener {
+                    modelInput.setText(modelId)
+                    modelInput.setSelection(modelId.length)
+                }
+            }
+            modelChipsRow.addView(chip)
+        }
+        modelChipsScroll.addView(modelChipsRow)
+        cloudSection.addView(modelChipsScroll)
+
+        // Protocol Selector Row
+        cloudSection.addView(makeLabel("CONNECTION PROTOCOL"))
+        val protocolRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(6)
+            }
+        }
+        protocolRow.addView(protoOpenAiBtn)
+        protocolRow.addView(protoAnthropicBtn)
+        cloudSection.addView(protocolRow)
+
+        // Test Connection Button + Result View
+        val testResultText = TextView(this).apply {
+            text = ""
+            textSize = 11.5f
+            visibility = View.GONE
+            setPadding(dp(4), dp(6), dp(4), dp(4))
+        }
+
+        val testBtn = TextView(this).apply {
+            text = "⚡  Test Connection & Token"
+            setTextColor(bgObsidian)
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            background = silverGradientBox(10)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(6)
+            }
+            setOnClickListener {
+                val testUrl = urlInput.text.toString().trim()
+                val testKey = keyInput.text.toString().trim()
+                val testModel = modelInput.text.toString().trim()
+                if (testUrl.isEmpty()) {
+                    Toast.makeText(this@MainActivity, "Base URL cannot be empty", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                testResultText.visibility = View.VISIBLE
+                testResultText.setTextColor(Color.parseColor("#F59E0B"))
+                testResultText.text = "Testing connection to $testUrl..."
+                isEnabled = false
+
+                executor.execute {
+                    val endpoint = resolveEndpointUrl(testUrl, selectedProtocol)
+                    val isAnthropic = selectedProtocol == "anthropic" || testUrl.contains("anthropic.com")
+                    var ok = false
+                    var msg = ""
+                    var conn: HttpURLConnection? = null
+                    try {
+                        conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                            requestMethod = "POST"
+                            connectTimeout = 8000
+                            readTimeout = 12000
+                            setRequestProperty("Content-Type", "application/json")
+                            if (isAnthropic) {
+                                if (testKey.isNotEmpty()) setRequestProperty("x-api-key", testKey)
+                                setRequestProperty("anthropic-version", "2023-06-01")
+                            } else {
+                                if (testKey.isNotEmpty()) setRequestProperty("Authorization", "Bearer $testKey")
+                            }
+                            doOutput = true
+                        }
+
+                        val targetModel = testModel.ifEmpty { "claude-3-5-sonnet-20241022" }
+                        val payload = if (isAnthropic) {
+                            JSONObject().apply {
+                                put("model", targetModel)
+                                put("max_tokens", 5)
+                                put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "hi")))
+                            }
+                        } else {
+                            JSONObject().apply {
+                                put("model", targetModel)
+                                put("max_tokens", 5)
+                                put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", "hi")))
+                            }
+                        }
+
+                        OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use {
+                            it.write(payload.toString())
+                            it.flush()
+                        }
+
+                        val code = conn.responseCode
+                        if (code in 200..299) {
+                            ok = true
+                            msg = "✓ Connection OK (HTTP $code) — Model $targetModel responded!"
+                        } else {
+                            val err = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                            val detail = try {
+                                val j = JSONObject(err)
+                                j.optJSONObject("error")?.optString("message") ?: j.optString("message", err)
+                            } catch (_: Exception) {
+                                err.take(120)
+                            }
+                            msg = "✕ HTTP $code: $detail"
+                        }
+                    } catch (e: Exception) {
+                        msg = "✕ Connection failed: ${e.message}"
+                    } finally {
+                        conn?.disconnect()
+                        mainHandler.post {
+                            isEnabled = true
+                            testResultText.text = msg
+                            testResultText.setTextColor(if (ok) Color.parseColor("#10B981") else dangerRed)
+                        }
+                    }
+                }
+            }
+        }
+        cloudSection.addView(testBtn)
+        cloudSection.addView(testResultText)
+        container.addView(cloudSection)
+
+        // --- LOCAL SECTION (GGUF Models, Catalog, Ctx, Threads) ---
+        localSection.addView(makeLabel("INSTALLED GGUF MODELS"))
         val modelsListBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         fun refreshModelList() {
@@ -1557,10 +2052,10 @@ class MainActivity : Activity() {
         }
 
         refreshModelList()
-        container.addView(modelsListBox)
+        localSection.addView(modelsListBox)
 
         // Curated 1-Tap GGUF Model Catalog
-        container.addView(makeLabel("1-TAP GGUF MODEL CATALOG"))
+        localSection.addView(makeLabel("1-TAP GGUF MODEL CATALOG"))
         val modelsDir = File(filesDir, "models")
         for (cat in modelCatalog) {
             val alreadyDownloaded = File(modelsDir, cat.fileName).exists()
@@ -1617,11 +2112,11 @@ class MainActivity : Activity() {
 
             card.addView(col)
             card.addView(actionBtn)
-            container.addView(card)
+            localSection.addView(card)
         }
 
         // Context Window Selector Chips
-        container.addView(makeLabel("CONTEXT WINDOW (N_CTX)"))
+        localSection.addView(makeLabel("CONTEXT WINDOW (N_CTX)"))
         var selectedCtx = getCtxSize()
         val ctxOptions = listOf(1024, 2048, 4096)
         val ctxRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -1658,13 +2153,13 @@ class MainActivity : Activity() {
             ctxRow.addView(chip)
         }
         updateCtxChips()
-        container.addView(ctxRow)
+        localSection.addView(ctxRow)
 
         // CPU Threads Slider
         val maxCores = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
         var selectedThreads = getCpuThreads().coerceIn(1, maxCores)
         val threadLabel = makeLabel("CPU THREADS: $selectedThreads / $maxCores")
-        container.addView(threadLabel)
+        localSection.addView(threadLabel)
 
         val threadSeek = SeekBar(this).apply {
             max = maxCores - 1
@@ -1678,9 +2173,10 @@ class MainActivity : Activity() {
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {}
             })
         }
-        container.addView(threadSeek)
+        localSection.addView(threadSeek)
+        container.addView(localSection)
 
-        // 1-Tap System Prompt Personas
+        // --- COMMON GENERAL SECTION ---
         container.addView(makeLabel("SYSTEM PERSONA PRESETS"))
         val promptInput = makeInput(getSystemPrompt(), multiline = true)
         val personaRow = LinearLayout(this).apply {
@@ -1713,7 +2209,6 @@ class MainActivity : Activity() {
         container.addView(personaRow)
         container.addView(promptInput)
 
-        val urlInput = makeInput(getServerUrl())
         val tempInput = makeInput(getTemperature().toString(), numeric = true)
         val tokensInput = makeInput(getMaxTokens().toString(), numeric = true)
 
@@ -1721,8 +2216,8 @@ class MainActivity : Activity() {
         container.addView(tempInput)
         container.addView(makeLabel("MAX RESPONSE TOKENS"))
         container.addView(tokensInput)
-        container.addView(makeLabel("EXTERNAL SERVER URL (HYBRID FALLBACK)"))
-        container.addView(urlInput)
+
+        updateModeTabs()
 
         val scroll = ScrollView(this).apply { addView(container) }
 
@@ -1730,17 +2225,23 @@ class MainActivity : Activity() {
             .setTitle("Glyph Studio Settings")
             .setView(scroll)
             .setPositiveButton("Save & Apply") { _, _ ->
-                val useNative = nativeSwitch.isChecked
-                val cleanUrl = urlInput.text.toString().trim().removeSuffix("/").ifEmpty { "http://127.0.0.1:8080" }
+                val useNative = selectedModeIsNative
+                val cleanUrl = urlInput.text.toString().trim().removeSuffix("/").ifEmpty { "https://tokens.bd/v1" }
+                val cleanKey = keyInput.text.toString().trim()
+                val cleanModel = modelInput.text.toString().trim().ifEmpty { "claude-3-5-sonnet-20241022" }
                 val cleanPrompt = promptInput.text.toString().trim().ifEmpty { personaPresets[0].second }
                 val cleanTemp = tempInput.text.toString().toFloatOrNull()?.coerceIn(0f, 2f) ?: 0.7f
                 val cleanTokens = tokensInput.text.toString().toIntOrNull()?.coerceIn(64, 4096) ?: 1024
 
                 prefs().edit()
                     .putBoolean("native_mode", useNative)
+                    .putString("api_base_url", cleanUrl)
+                    .putString("server_url", cleanUrl)
+                    .putString("api_key", cleanKey)
+                    .putString("api_model", cleanModel)
+                    .putString("api_protocol", selectedProtocol)
                     .putInt("n_ctx", selectedCtx)
                     .putInt("n_threads", selectedThreads)
-                    .putString("server_url", cleanUrl)
                     .putString("system_prompt", cleanPrompt)
                     .putFloat("temperature", cleanTemp)
                     .putInt("max_tokens", cleanTokens)
@@ -1757,7 +2258,12 @@ class MainActivity : Activity() {
     }
 
     private fun checkServerHealth() {
-        val currentUrl = getServerUrl()
+        val currentUrl = getApiBaseUrl()
+        val isLocal = currentUrl.contains("127.0.0.1") || currentUrl.contains("localhost")
+        if (!isLocal) {
+            openSettingsDialog()
+            return
+        }
         setStatus("Checking...", "#F59E0B")
         executor.execute {
             val online = try {
@@ -1777,7 +2283,7 @@ class MainActivity : Activity() {
                     emptySubLabel.text = "Connected to $currentUrl"
                 } else {
                     setStatus("Offline", "#EF4444")
-                    emptySubLabel.text = "External Server offline ($currentUrl)\nSwitch to Standalone Mode in ⚙"
+                    emptySubLabel.text = "Local Server offline ($currentUrl)\nSwitch to Standalone Mode in ⚙"
                 }
             }
         }
@@ -2086,6 +2592,17 @@ class MainActivity : Activity() {
             return
         }
 
+        if (!nativeMode) {
+            val key = getApiKey()
+            val url = getApiBaseUrl()
+            val isLocal = url.contains("127.0.0.1") || url.contains("localhost")
+            if (key.isEmpty() && !isLocal) {
+                Toast.makeText(this, "Please configure your API Key in ⚙ Settings", Toast.LENGTH_LONG).show()
+                openSettingsDialog()
+                return
+            }
+        }
+
         val fileSnapName = attachedFileName
         val fileSnapBody = attachedFileContent
         val displayPrompt = if (fileSnapName != null) "[File: $fileSnapName]\n$prompt" else prompt
@@ -2109,7 +2626,7 @@ class MainActivity : Activity() {
         val nativeMode = isNativeMode()
         if (nativeMode && !llamaBridge.isLoaded) return
 
-        val activeUrl = getServerUrl()
+        val activeUrl = getApiBaseUrl()
         val activeSystemPrompt = getSystemPrompt()
         val activeTemp = getTemperature()
         val activeMaxTokens = getMaxTokens()
@@ -2135,6 +2652,7 @@ class MainActivity : Activity() {
                     }
                 }
                 val contextMessages = buildContextWindowMessages(effectiveSystem)
+                val senderLabel = if (nativeMode) "GLYPH" else "GLYPH • ${getApiModel()}"
 
                 if (nativeMode) {
                     llamaBridge.generate(
@@ -2148,33 +2666,63 @@ class MainActivity : Activity() {
                         val elapsedSec = ((SystemClock.elapsedRealtime() - startTimeMs) / 1000.0).coerceAtLeast(0.1)
                         val tps = String.format(Locale.US, "%.1f", tokenCount / elapsedSec)
                         mainHandler.post {
-                            assistantBubble.senderTag.text = "GLYPH • $tps tok/s"
+                            assistantBubble.senderTag.text = "$senderLabel • $tps tok/s"
                             assistantBubble.latestRawText = snapshot
                             assistantBubble.streamTextView.text = snapshot
                             scrollToBottom()
                         }
                     }
                 } else {
-                    val conn = (URL("$activeUrl/v1/chat/completions").openConnection() as HttpURLConnection).apply {
+                    val activeKey = getApiKey()
+                    val activeModel = getApiModel()
+                    val activeProtocol = getApiProtocol()
+                    val isAnthropic = activeProtocol == "anthropic" || activeUrl.contains("anthropic.com")
+                    val fullUrl = resolveEndpointUrl(activeUrl, activeProtocol)
+
+                    val conn = (URL(fullUrl).openConnection() as HttpURLConnection).apply {
                         requestMethod = "POST"
                         setRequestProperty("Content-Type", "application/json")
                         setRequestProperty("Accept", "text/event-stream")
-                        doOutput = true
-                        connectTimeout = 5000
-                        readTimeout = 0
-                    }
-
-                    val messagesArray = JSONArray().apply {
-                        for ((role, content) in contextMessages) {
-                            put(JSONObject().put("role", role).put("content", content))
+                        if (isAnthropic) {
+                            if (activeKey.isNotEmpty()) setRequestProperty("x-api-key", activeKey)
+                            setRequestProperty("anthropic-version", "2023-06-01")
+                        } else {
+                            if (activeKey.isNotEmpty()) setRequestProperty("Authorization", "Bearer $activeKey")
                         }
+                        doOutput = true
+                        connectTimeout = 10000
+                        readTimeout = 60000
                     }
+                    activeHttpConn = conn
 
-                    val payload = JSONObject().apply {
-                        put("stream", true)
-                        put("temperature", activeTemp.toDouble())
-                        put("max_tokens", activeMaxTokens)
-                        put("messages", messagesArray)
+                    val payload = if (isAnthropic) {
+                        val msgsArray = JSONArray()
+                        for ((role, content) in contextMessages) {
+                            if (role != "system") {
+                                msgsArray.put(JSONObject().put("role", role).put("content", content))
+                            }
+                        }
+                        JSONObject().apply {
+                            put("model", activeModel)
+                            put("system", effectiveSystem)
+                            put("stream", true)
+                            put("max_tokens", activeMaxTokens)
+                            put("temperature", activeTemp.toDouble())
+                            put("messages", msgsArray)
+                        }
+                    } else {
+                        val messagesArray = JSONArray().apply {
+                            for ((role, content) in contextMessages) {
+                                put(JSONObject().put("role", role).put("content", content))
+                            }
+                        }
+                        JSONObject().apply {
+                            put("model", activeModel)
+                            put("stream", true)
+                            put("temperature", activeTemp.toDouble())
+                            put("max_tokens", activeMaxTokens)
+                            put("messages", messagesArray)
+                        }
                     }
 
                     OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use {
@@ -2182,36 +2730,56 @@ class MainActivity : Activity() {
                         it.flush()
                     }
 
+                    val responseCode = conn.responseCode
+                    if (responseCode !in 200..299) {
+                        val errBody = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                        val parsedError = try {
+                            val json = JSONObject(errBody)
+                            json.optJSONObject("error")?.optString("message") ?: json.optString("message", errBody)
+                        } catch (_: Exception) {
+                            errBody.ifEmpty { "HTTP $responseCode ${conn.responseMessage}" }
+                        }
+                        throw Exception("API Error ($responseCode): $parsedError")
+                    }
+
                     BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { reader ->
-                        var line: String?
-                        while (reader.readLine().also { line = it } != null) {
+                        var line: String? = null
+                        while (isGenerating && reader.readLine().also { line = it } != null) {
                             val raw = line?.trim() ?: continue
                             if (!raw.startsWith("data:")) continue
                             val data = raw.removePrefix("data:").trim()
                             if (data == "[DONE]") break
+                            if (data.isEmpty()) continue
 
                             try {
                                 val json = JSONObject(data)
-                                val choices = json.optJSONArray("choices") ?: continue
-                                if (choices.length() > 0) {
+                                var token = ""
+                                // Try OpenAI format
+                                val choices = json.optJSONArray("choices")
+                                if (choices != null && choices.length() > 0) {
                                     val delta = choices.getJSONObject(0).optJSONObject("delta")
-                                    val token = if (delta != null && !delta.isNull("content")) {
-                                        delta.optString("content", "")
-                                    } else {
-                                        ""
+                                    if (delta != null && !delta.isNull("content")) {
+                                        token = delta.optString("content", "")
                                     }
-                                    if (token.isNotEmpty()) {
-                                        tokenCount++
-                                        fullReply.append(token)
-                                        val snapshot = fullReply.toString()
-                                        val elapsedSec = ((SystemClock.elapsedRealtime() - startTimeMs) / 1000.0).coerceAtLeast(0.1)
-                                        val tps = String.format(Locale.US, "%.1f", tokenCount / elapsedSec)
-                                        mainHandler.post {
-                                            assistantBubble.senderTag.text = "GLYPH • $tps tok/s"
-                                            assistantBubble.latestRawText = snapshot
-                                            assistantBubble.streamTextView.text = snapshot
-                                            scrollToBottom()
-                                        }
+                                }
+                                // Try Anthropic format
+                                if (token.isEmpty() && json.optString("type") == "content_block_delta") {
+                                    val delta = json.optJSONObject("delta")
+                                    if (delta != null && delta.optString("type") == "text_delta") {
+                                        token = delta.optString("text", "")
+                                    }
+                                }
+                                if (token.isNotEmpty()) {
+                                    tokenCount++
+                                    fullReply.append(token)
+                                    val snapshot = fullReply.toString()
+                                    val elapsedSec = ((SystemClock.elapsedRealtime() - startTimeMs) / 1000.0).coerceAtLeast(0.1)
+                                    val tps = String.format(Locale.US, "%.1f", tokenCount / elapsedSec)
+                                    mainHandler.post {
+                                        assistantBubble.senderTag.text = "$senderLabel • $tps tok/s"
+                                        assistantBubble.latestRawText = snapshot
+                                        assistantBubble.streamTextView.text = snapshot
+                                        scrollToBottom()
                                     }
                                 }
                             } catch (_: Exception) { }
@@ -2228,7 +2796,7 @@ class MainActivity : Activity() {
                     conversationHistory.add("assistant" to finalResponse)
                     persistActiveSession()
                     mainHandler.post {
-                        assistantBubble.senderTag.text = "GLYPH • $finalTps tok/s ($tokenCount tok)"
+                        assistantBubble.senderTag.text = "$senderLabel • $finalTps tok/s ($tokenCount tok)"
                         assistantBubble.latestRawText = finalResponse
                         renderFormattedContent(assistantBubble.contentBox, finalResponse)
                         scrollToBottom()
@@ -2238,13 +2806,14 @@ class MainActivity : Activity() {
                 val errMsg = if (nativeMode) {
                     "Inference error: ${e.message}"
                 } else {
-                    "Connection failed. Make sure llama-server is running at $activeUrl."
+                    e.message ?: "Connection failed. Please check your network and API settings."
                 }
                 mainHandler.post {
                     assistantBubble.latestRawText = errMsg
                     assistantBubble.streamTextView.text = errMsg
                 }
             } finally {
+                activeHttpConn = null
                 setKeepAliveService(false)
                 mainHandler.post {
                     isGenerating = false
